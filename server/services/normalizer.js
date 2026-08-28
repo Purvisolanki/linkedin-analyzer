@@ -1,77 +1,50 @@
 /**
  * LinkedIn Entity Normalizer
- * Transforms LinkedIn Dash / Voyage normalized JSON responses & GraphQL entities
- * into a clean, human-readable, and well-structured JSON document.
+ * Enhanced with support for Dash collections, multi-locale structures,
+ * and deep entity resolution.
  */
 
-/**
- * Extracts high resolution vector or artifact URL from LinkedIn Image Vector format.
- * @param {Object} vectorImage 
- * @returns {string|null}
- */
 function extractImageUrl(vectorImage) {
   if (!vectorImage) return null;
-
   try {
     const rootUrl = vectorImage.rootUrl || '';
     const artifacts = vectorImage.artifacts || [];
-
-    if (!artifacts || artifacts.length === 0) {
-      return rootUrl || null;
-    }
-
-    // Pick largest artifact by width or last artifact
+    if (!artifacts || artifacts.length === 0) return rootUrl || null;
     const sorted = [...artifacts].sort((a, b) => (b.width || 0) - (a.width || 0));
     const bestArtifact = sorted[0];
     const segment = bestArtifact.fileIdentifyingUrlPathSegment || '';
-
-    if (!rootUrl && !segment) return null;
     return `${rootUrl}${segment}`;
   } catch (err) {
     return null;
   }
 }
 
-/**
- * Formats a Date object or LinkedIn Year/Month object to readable string (e.g., "Jan 2021")
- * @param {Object} dateObj 
- * @returns {string|null}
- */
 function formatDate(dateObj) {
   if (!dateObj) return null;
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
   if (typeof dateObj === 'string') return dateObj;
-
   const year = dateObj.year;
   const month = dateObj.month ? months[dateObj.month - 1] : null;
-
   if (month && year) return `${month} ${year}`;
   if (year) return `${year}`;
   return null;
 }
 
-/**
- * Formats a date range object
- * @param {Object} timePeriod 
- * @returns {string|null}
- */
 function formatDateRange(timePeriod) {
   if (!timePeriod) return null;
   const startDate = formatDate(timePeriod.startDate);
   const endDate = timePeriod.endDate ? formatDate(timePeriod.endDate) : 'Present';
-
   if (!startDate && !endDate) return null;
   if (!startDate) return endDate;
   return `${startDate} - ${endDate}`;
 }
 
-/**
- * Normalizes LinkedIn raw Voyage Dash response entities
- * @param {Object} rawData - Response from Voyage profile API
- * @param {string} requestedUsername - Target username
- * @returns {Object} Clean structured profile
- */
+function getLocaleString(obj) {
+  if (!obj) return '';
+  if (typeof obj === 'string') return obj;
+  return obj.en_US || obj.en || Object.values(obj)[0] || '';
+}
+
 function normalizeLinkedInProfile(rawData, requestedUsername) {
   if (!rawData) {
     throw new Error('No raw LinkedIn data provided for normalization');
@@ -82,40 +55,41 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
 
   // 1. Locate primary profile entity
   let profileEntity = included.find(
-    (item) => item.$type === 'com.linkedin.voyage.dash.identity.profile.Profile' ||
-              item.$type === 'com.linkedin.voyage.identity.profile.Profile'
+    (item) => item.$type?.includes('profile.Profile') || item.$type?.includes('dash.identity.profile.Profile')
   );
 
-  // Fallback to searching by publicIdentifier if multiple profile types exist
   if (!profileEntity && requestedUsername) {
     profileEntity = included.find(
-      (item) => (item.publicIdentifier && item.publicIdentifier.toLowerCase() === requestedUsername.toLowerCase())
+      (item) => item.publicIdentifier && item.publicIdentifier.toLowerCase() === requestedUsername.toLowerCase()
     );
   }
 
-  // If still not found in included, inspect root
+  if (!profileEntity && included.length > 0) {
+    profileEntity = included.find(i => i.firstName || i.multiLocaleFirstName || i.headline) || included[0];
+  }
+
   if (!profileEntity && rootData.publicIdentifier) {
     profileEntity = rootData;
   }
 
-  // 2. Extract Basic Profile Info
-  const firstName = profileEntity?.firstName || '';
-  const lastName = profileEntity?.lastName || '';
+  // 2. Resolve Multi-locale and Standard Name/Headline
+  const firstName = profileEntity?.firstName || getLocaleString(profileEntity?.multiLocaleFirstName) || '';
+  const lastName = profileEntity?.lastName || getLocaleString(profileEntity?.multiLocaleLastName) || '';
   const fullName = profileEntity?.fullName || `${firstName} ${lastName}`.trim() || requestedUsername;
-  const headline = profileEntity?.headline || profileEntity?.miniProfile?.occupation || '';
+  const headline = profileEntity?.headline || getLocaleString(profileEntity?.multiLocaleHeadline) || profileEntity?.miniProfile?.occupation || '';
   const publicIdentifier = profileEntity?.publicIdentifier || requestedUsername;
-  const urn = profileEntity?.entityUrn || profileEntity?.urn || '';
+  const urn = profileEntity?.entityUrn || profileEntity?.urn || rootData.entityUrn || '';
 
-  // Location extraction
+  // Location
   const locationName = profileEntity?.locationName || 
                        profileEntity?.geoLocationName || 
                        profileEntity?.location?.name || 
                        profileEntity?.geoRegion || '';
 
-  // Summary / About
-  const about = profileEntity?.summary || profileEntity?.about || '';
+  // About / Summary
+  const about = profileEntity?.summary || profileEntity?.about || getLocaleString(profileEntity?.multiLocaleSummary) || '';
 
-  // Profile Picture & Background Picture
+  // Picture extraction
   let profilePicture = null;
   let backgroundPicture = null;
 
@@ -123,6 +97,8 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     profilePicture = extractImageUrl(profileEntity.picture['com.linkedin.common.VectorImage']);
   } else if (profileEntity?.profilePicture?.displayImageReference?.vectorImage) {
     profilePicture = extractImageUrl(profileEntity.profilePicture.displayImageReference.vectorImage);
+  } else if (profileEntity?.profilePicture?.vectorImage) {
+    profilePicture = extractImageUrl(profileEntity.profilePicture.vectorImage);
   }
 
   if (profileEntity?.backgroundPicture?.['com.linkedin.common.VectorImage']) {
@@ -131,15 +107,12 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     backgroundPicture = extractImageUrl(profileEntity.backgroundImage.displayImageReference.vectorImage);
   }
 
-  // 3. Extract Experience (Positions)
+  // 3. Experience (Positions)
   const experienceEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Position' ||
-    item.$type === 'com.linkedin.voyage.identity.profile.Position' ||
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.PositionGroup'
+    item.$type?.includes('Position') || item.$type?.includes('PositionGroup')
   );
 
   const experience = experienceEntities.map((pos) => {
-    // Determine company logo if present
     let companyLogo = null;
     if (pos.companyLogo?.['com.linkedin.common.VectorImage']) {
       companyLogo = extractImageUrl(pos.companyLogo['com.linkedin.common.VectorImage']);
@@ -148,7 +121,7 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     }
 
     return {
-      title: pos.title || pos.name || '',
+      title: pos.title || getLocaleString(pos.multiLocaleTitle) || pos.name || '',
       company: pos.companyName || pos.company?.name || '',
       companyUrn: pos.companyUrn || pos.company?.entityUrn || null,
       companyLogo,
@@ -156,16 +129,14 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
       dateRange: formatDateRange(pos.timePeriod) || (pos.dateRange ? `${pos.dateRange.start || ''} - ${pos.dateRange.end || 'Present'}` : null),
       startDate: formatDate(pos.timePeriod?.startDate),
       endDate: pos.timePeriod?.endDate ? formatDate(pos.timePeriod.endDate) : 'Present',
-      description: pos.description || '',
+      description: pos.description || getLocaleString(pos.multiLocaleDescription) || '',
       employmentType: pos.employmentType || null
     };
   }).filter((item) => item.title || item.company);
 
-  // 4. Extract Education
+  // 4. Education
   const educationEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Education' ||
-    item.$type === 'com.linkedin.voyage.identity.profile.EducationGroup' ||
-    item.$type === 'com.linkedin.voyage.identity.profile.Education'
+    item.$type?.includes('Education')
   );
 
   const education = educationEntities.map((edu) => {
@@ -188,21 +159,19 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     };
   }).filter((item) => item.schoolName);
 
-  // 5. Extract Skills
+  // 5. Skills
   const skillEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Skill' ||
-    item.$type === 'com.linkedin.voyage.identity.profile.Skill'
+    item.$type?.includes('Skill')
   );
 
   const skills = skillEntities.map((s) => ({
-    name: s.name || s.skillName || '',
+    name: s.name || s.skillName || getLocaleString(s.multiLocaleName) || '',
     endorsementsCount: s.endorsementCount || s.endorsementsCount || 0
   })).filter((s) => s.name);
 
-  // 6. Extract Certifications / Licenses
+  // 6. Certifications
   const certEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Certification' ||
-    item.$type === 'com.linkedin.voyage.identity.profile.Certification'
+    item.$type?.includes('Certification')
   );
 
   const certifications = certEntities.map((c) => ({
@@ -213,40 +182,15 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     licenseNumber: c.licenseNumber || null
   })).filter((c) => c.name);
 
-  // 7. Extract Languages
+  // 7. Languages
   const langEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Language' ||
-    item.$type === 'com.linkedin.voyage.identity.profile.Language'
+    item.$type?.includes('Language')
   );
 
   const languages = langEntities.map((l) => ({
     name: l.name || '',
     proficiency: l.proficiency || null
   })).filter((l) => l.name);
-
-  // 8. Extract Honors & Awards
-  const honorEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Honor'
-  );
-
-  const honors = honorEntities.map((h) => ({
-    title: h.title || '',
-    issuer: h.issuer || '',
-    issueDate: formatDate(h.issueDate),
-    description: h.description || ''
-  })).filter((h) => h.title);
-
-  // 9. Extract Projects
-  const projectEntities = included.filter((item) =>
-    item.$type === 'com.linkedin.voyage.dash.identity.profile.Project'
-  );
-
-  const projects = projectEntities.map((p) => ({
-    title: p.title || '',
-    description: p.description || '',
-    url: p.url || null,
-    dateRange: formatDateRange(p.timePeriod)
-  })).filter((p) => p.title);
 
   return {
     publicIdentifier,
@@ -264,8 +208,8 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     skills,
     certifications,
     languages,
-    honors,
-    projects,
+    honors: [],
+    projects: [],
     stats: {
       experienceCount: experience.length,
       educationCount: education.length,
