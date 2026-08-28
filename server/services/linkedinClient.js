@@ -8,6 +8,8 @@ class LinkedInClient {
   constructor(config = {}) {
     this.liAt = (config.liAt || process.env.LINKEDIN_LI_AT || '').trim();
     this.jsessionid = (config.jsessionid || process.env.LINKEDIN_JSESSIONID || '').trim();
+    this.linkedApiToken = (config.linkedApiToken || process.env.LINKED_API_TOKEN || '').trim();
+    this.linkedApiIdent = (config.linkedApiIdent || process.env.LINKED_API_IDENTIFICATION_TOKEN || '').trim();
     this.baseURL = 'https://www.linkedin.com/voyager/api';
     this.userAgent = process.env.LINKEDIN_USER_AGENT || 
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
@@ -22,8 +24,12 @@ class LinkedInClient {
     const jar = new CookieJar();
     const csrf = this.getCsrfToken();
 
-    await jar.setCookie(`li_at=${this.liAt}; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
-    await jar.setCookie(`JSESSIONID="${csrf}"; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
+    if (this.liAt) {
+      await jar.setCookie(`li_at=${this.liAt}; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
+    }
+    if (csrf) {
+      await jar.setCookie(`JSESSIONID="${csrf}"; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
+    }
 
     return wrapper(axios.create({
       jar,
@@ -39,7 +45,38 @@ class LinkedInClient {
   }
 
   isConfigured() {
-    return Boolean(this.liAt && this.jsessionid);
+    return Boolean((this.liAt && this.jsessionid) || (this.linkedApiToken && this.linkedApiIdent));
+  }
+
+  /**
+   * Fetch person using connected LinkedApi gateway if tokens are provided
+   */
+  async fetchViaLinkedApi(targetUrl) {
+    if (!this.linkedApiToken || !this.linkedApiIdent) return null;
+    try {
+      console.log(`[LinkedApi] Dispatching workflow for: ${targetUrl}`);
+      const executeRes = await axios.post('https://api.linkedapi.io/v1/fetch-person', {
+        person_url: targetUrl.startsWith('http') ? targetUrl : `https://www.linkedin.com/in/${targetUrl}`,
+        retrieve_experience: true,
+        retrieve_education: true,
+        retrieve_skills: true,
+        retrieve_languages: true
+      }, {
+        headers: {
+          'Authorization': `Bearer ${this.linkedApiToken}`,
+          'X-Identification-Token': this.linkedApiIdent,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      });
+
+      if (executeRes.data && executeRes.data.data) {
+        return executeRes.data.data;
+      }
+    } catch (err) {
+      console.warn(`[LinkedApi Gateway] Note:`, err.message);
+    }
+    return null;
   }
 
   async fetchProfile(identifier) {
@@ -48,9 +85,18 @@ class LinkedInClient {
     }
 
     const targetUsername = identifier.trim();
-    const sessionClient = await this.createSessionClient();
 
-    // Endpoints including the exact entities and GraphQL endpoints
+    // 1. LinkedApi Connected Workflow if configured
+    const linkedApiResult = await this.fetchViaLinkedApi(targetUsername);
+    if (linkedApiResult) {
+      return {
+        profile: normalizeLinkedInProfile(linkedApiResult, targetUsername),
+        raw: linkedApiResult
+      };
+    }
+
+    // 2. Direct Reverse-Engineered Voyager Endpoints
+    const sessionClient = await this.createSessionClient();
     const voyagerUrls = [
       `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
       `https://www.linkedin.com/voyager/api/entities/people/${encodeURIComponent(targetUsername)}`,
@@ -79,7 +125,7 @@ class LinkedInClient {
       }
     }
 
-    // Public HTML DOM Parser fallback
+    // 3. Public HTML DOM Parser fallback
     try {
       const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
       console.log(`[LinkedInClient] Fetching public page: ${pageUrl}`);
