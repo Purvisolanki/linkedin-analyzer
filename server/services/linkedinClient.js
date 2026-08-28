@@ -12,25 +12,22 @@ class LinkedInClient {
 
   getCsrfToken() {
     if (!this.jsessionid) return '';
-    return this.jsessionid.replace(/^"|"$/g, '');
+    return this.jsessionid.trim().replace(/^"|"$/g, '');
   }
 
   getCookieHeader() {
-    const cookies = [];
-    if (this.liAt) cookies.push(`li_at=${this.liAt.trim()}`);
-    if (this.jsessionid) {
-      const cleanJsession = this.jsessionid.trim().replace(/^"|"$/g, '');
-      cookies.push(`JSESSIONID="${cleanJsession}"`);
-    }
-    return cookies.join('; ');
+    const rawLiAt = (this.liAt || '').trim();
+    const rawJsession = (this.jsessionid || '').trim().replace(/^"|"$/g, '');
+    return `li_at=${rawLiAt}; JSESSIONID="${rawJsession}"; bcookie="v=2&"; lang=v=2&lang=en-us`;
   }
 
   getHeaders() {
+    const csrf = this.getCsrfToken();
     return {
       'User-Agent': this.userAgent,
       'Accept': 'application/vnd.linkedin.normalized+json+2.1',
       'Accept-Language': 'en-US,en;q=0.9',
-      'csrf-token': this.getCsrfToken(),
+      'csrf-token': csrf,
       'x-restli-protocol-version': '2.0.0',
       'x-li-lang': 'en_US',
       'x-li-track': JSON.stringify({ clientVersion: '1.13.8821' }),
@@ -38,7 +35,7 @@ class LinkedInClient {
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin',
-      'Referer': 'https://www.linkedin.com/'
+      'Referer': 'https://www.linkedin.com/in/'
     };
   }
 
@@ -47,7 +44,7 @@ class LinkedInClient {
   }
 
   /**
-   * Primary profile fetcher with multi-endpoint fallback cascade
+   * Fetches profile using full endpoint cascade with public HTML parser fallback
    */
   async fetchProfile(identifier) {
     if (!this.isConfigured()) {
@@ -57,67 +54,85 @@ class LinkedInClient {
     const targetUsername = identifier.trim();
     const errors = [];
 
-    // Strategy 1: GraphQL / Dash Member Profiles API
+    // Endpoint A: Member Identity GraphQL Decoration endpoint
     try {
-      const url1 = `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`;
-      const res = await axios.get(url1, {
+      const urlA = `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`;
+      const resA = await axios.get(urlA, {
         headers: this.getHeaders(),
-        timeout: 12000,
-        validateStatus: (s) => s < 500
+        timeout: 10000,
+        validateStatus: () => true
       });
 
-      if (res.status === 200 && res.data && (res.data.data || res.data.included)) {
+      if (resA.status === 200 && resA.data && (resA.data.data || resA.data.included)) {
         return {
-          profile: normalizeLinkedInProfile(res.data, targetUsername),
-          raw: res.data
+          profile: normalizeLinkedInProfile(resA.data, targetUsername),
+          raw: resA.data
         };
       }
-      errors.push(`Strategy 1 (Dash API) returned status ${res.status}`);
+      errors.push(`Dash: HTTP ${resA.status}`);
     } catch (e) {
-      errors.push(`Strategy 1 error: ${e.message}`);
+      errors.push(`Dash: ${e.message}`);
     }
 
-    // Strategy 2: Identity Profile View API
+    // Endpoint B: Full Profile View endpoint
     try {
-      const url2 = `${this.baseURL}/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`;
-      const res = await axios.get(url2, {
+      const urlB = `${this.baseURL}/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`;
+      const resB = await axios.get(urlB, {
         headers: this.getHeaders(),
-        timeout: 12000,
-        validateStatus: (s) => s < 500
+        timeout: 10000,
+        validateStatus: () => true
       });
 
-      if (res.status === 200 && res.data) {
+      if (resB.status === 200 && resB.data) {
         return {
-          profile: normalizeLinkedInProfile(res.data, targetUsername),
-          raw: res.data
+          profile: normalizeLinkedInProfile(resB.data, targetUsername),
+          raw: resB.data
         };
       }
-      errors.push(`Strategy 2 (ProfileView API) returned status ${res.status}`);
+      errors.push(`ProfileView: HTTP ${resB.status}`);
     } catch (e) {
-      errors.push(`Strategy 2 error: ${e.message}`);
+      errors.push(`ProfileView: ${e.message}`);
     }
 
-    // Strategy 3: GraphQL Member Profile Query
+    // Endpoint C: Mini Profile & Vanity Resolution
     try {
-      const url3 = `${this.baseURL}/graphql?variables=(vanityName:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.622b7b5dc6439546b4ec2b55b9ebca72`;
-      const res = await axios.get(url3, {
-        headers: this.getHeaders(),
-        timeout: 12000,
-        validateStatus: (s) => s < 500
+      const urlC = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
+      const resC = await axios.get(urlC, {
+        headers: {
+          'User-Agent': this.userAgent,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cookie': this.getCookieHeader()
+        },
+        timeout: 10000,
+        validateStatus: () => true
       });
 
-      if (res.status === 200 && res.data && (res.data.data || res.data.included)) {
-        return {
-          profile: normalizeLinkedInProfile(res.data, targetUsername),
-          raw: res.data
-        };
+      if (resC.status === 200 && typeof resC.data === 'string') {
+        const html = resC.data;
+        // Parse embedded JSON-LD or code tags from LinkedIn page
+        const codeMatches = html.match(/<code style="display:\s*none" id="[^"]+">(.*?)<\/code>/gs) || [];
+        for (const block of codeMatches) {
+          const innerJson = block.replace(/<\/?code[^>]*>/g, '').trim();
+          try {
+            const parsed = JSON.parse(innerJson);
+            if (parsed.included || parsed.data) {
+              return {
+                profile: normalizeLinkedInProfile(parsed, targetUsername),
+                raw: parsed
+              };
+            }
+          } catch (jsonErr) {
+            // continue checking next code tag
+          }
+        }
       }
-      errors.push(`Strategy 3 (GraphQL query) returned status ${res.status}`);
+      errors.push(`Web HTML: HTTP ${resC.status}`);
     } catch (e) {
-      errors.push(`Strategy 3 error: ${e.message}`);
+      errors.push(`Web HTML: ${e.message}`);
     }
 
-    throw new Error(`Could not locate LinkedIn profile '${targetUsername}'. (${errors[0] || 'Profile not found or restricted'})`);
+    throw new Error(`LinkedIn session rejected the query for '${targetUsername}'. Please ensure LINKEDIN_LI_AT and LINKEDIN_JSESSIONID cookies are fresh and copied from a logged-in browser session. (${errors.join(' | ')})`);
   }
 }
 
