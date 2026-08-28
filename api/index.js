@@ -28,7 +28,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Diagnostic Debug Endpoint that returns raw HTML & API dump directly to browser/JSON
+// Diagnostic Debug Endpoint that inspects redirect locations & cookies
 app.get('/api/debug', async (req, res) => {
   const target = req.query.url || req.query.identifier || 'tabhay24';
   const username = target.replace(/^https?:\/\/[^/]+\/in\//i, '').replace(/\/+$/, '');
@@ -38,33 +38,13 @@ app.get('/api/debug', async (req, res) => {
     target: username,
     auth: {
       hasLiAt: Boolean(process.env.LINKEDIN_LI_AT),
-      liAtPrefix: process.env.LINKEDIN_LI_AT ? process.env.LINKEDIN_LI_AT.slice(0, 8) + '...' : null,
+      liAtLength: process.env.LINKEDIN_LI_AT?.length,
       hasJsession: Boolean(process.env.LINKEDIN_JSESSIONID),
       csrf: client.getCsrfToken()
     },
-    voyagerEndpointStatus: {},
-    htmlSnippet: null,
-    scriptsFound: 0,
-    extractedSample: null
+    pageTest: null
   };
 
-  // 1. Test Voyager ProfileView endpoint
-  try {
-    const vUrl = `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(username)}/profileView`;
-    const vRes = await axios.get(vUrl, {
-      headers: client.getHeaders(),
-      timeout: 8000,
-      validateStatus: () => true
-    });
-    results.voyagerEndpointStatus[vUrl] = {
-      status: vRes.status,
-      dataPreview: vRes.data ? JSON.stringify(vRes.data).slice(0, 500) : null
-    };
-  } catch (err) {
-    results.voyagerEndpointStatus.error = err.message;
-  }
-
-  // 2. Test Public Page HTML
   try {
     const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(username)}/`;
     const pRes = await axios.get(pageUrl, {
@@ -75,16 +55,18 @@ app.get('/api/debug', async (req, res) => {
         'Cookie': client.getCookieHeader()
       },
       timeout: 8000,
+      maxRedirects: 0,
       validateStatus: () => true
     });
 
-    results.publicPage = {
+    results.pageTest = {
       status: pRes.status,
-      htmlLength: pRes.data?.length || 0,
-      headSnippet: typeof pRes.data === 'string' ? pRes.data.slice(0, 1500) : null
+      redirectLocation: pRes.headers.location || null,
+      headers: pRes.headers,
+      bodyPreview: typeof pRes.data === 'string' ? pRes.data.slice(0, 500) : null
     };
   } catch (err) {
-    results.publicPage = { error: err.message };
+    results.pageTest = { error: err.message };
   }
 
   return res.json(results);
