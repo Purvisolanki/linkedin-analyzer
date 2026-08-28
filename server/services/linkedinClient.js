@@ -31,7 +31,7 @@ class LinkedInClient {
     const csrf = this.getCsrfToken();
     return {
       'User-Agent': this.userAgent,
-      'Accept': 'application/vnd.linkedin.normalized+json+2.1',
+      'Accept': 'application/vnd.linkedin.normalized+json+2.1, application/json, text/plain, */*',
       'Accept-Language': 'en-US,en;q=0.9',
       'csrf-token': csrf,
       'x-restli-protocol-version': '2.0.0',
@@ -56,7 +56,7 @@ class LinkedInClient {
 
     const targetUsername = identifier.trim();
 
-    // 1. Direct REST & Voyager API Calls (Exact working Dash member identity endpoint)
+    // 1. Direct REST & Voyager API Calls with maxRedirects: 0 (No redirect loops)
     const voyagerUrls = [
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}`,
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`,
@@ -70,8 +70,8 @@ class LinkedInClient {
         const res = await axios.get(url, {
           headers: this.getHeaders(),
           timeout: 8000,
-          maxRedirects: 5,
-          validateStatus: () => true
+          maxRedirects: 0, // Prevents redirect loops completely
+          validateStatus: (status) => status < 400
         });
 
         console.log(`[Voyager API] Status: ${res.status}`);
@@ -83,11 +83,11 @@ class LinkedInClient {
           };
         }
       } catch (err) {
-        console.warn(`[Voyager API] Error:`, err.message);
+        console.warn(`[Voyager API] Note on ${url}:`, err.response?.status || err.message);
       }
     }
 
-    // 2. Fetch Public Profile HTML fallback
+    // 2. Fetch Public Profile HTML fallback with maxRedirects: 0
     try {
       const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
       console.log(`[LinkedInClient] Fetching public web page: ${pageUrl}`);
@@ -96,11 +96,14 @@ class LinkedInClient {
           'User-Agent': this.userAgent,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Cookie': this.getCookieHeader()
+          'Cookie': this.getCookieHeader(),
+          'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"'
         },
         timeout: 9000,
-        maxRedirects: 5,
-        validateStatus: () => true
+        maxRedirects: 0,
+        validateStatus: (status) => status < 400
       });
 
       console.log(`[LinkedInClient] Public Page Status: ${res.status}`);
@@ -115,7 +118,7 @@ class LinkedInClient {
         }
       }
     } catch (e) {
-      console.error(`[LinkedInClient] Error:`, e.message);
+      console.warn(`[LinkedInClient] Public page note:`, e.response?.status || e.message);
     }
 
     throw new Error(`Could not retrieve full profile data for '${targetUsername}'.`);
