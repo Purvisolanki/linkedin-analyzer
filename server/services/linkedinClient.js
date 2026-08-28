@@ -1,10 +1,3 @@
-/**
- * Reverse Engineered LinkedIn Voyage API Client
- * 
- * Directly interacts with LinkedIn internal Voyage Dash & Identity endpoints
- * without requiring any browser automation (No Puppeteer / Playwright).
- */
-
 const axios = require('axios');
 const { normalizeLinkedInProfile } = require('./normalizer');
 
@@ -17,18 +10,11 @@ class LinkedInClient {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
   }
 
-  /**
-   * Cleans JSESSIONID to format required for csrf-token header
-   * LinkedIn session cookies usually contain quotes e.g. "ajax:1234567890"
-   */
   getCsrfToken() {
     if (!this.jsessionid) return '';
     return this.jsessionid.replace(/^"|"$/g, '');
   }
 
-  /**
-   * Formats the Cookie header string
-   */
   getCookieHeader() {
     const cookies = [];
     if (this.liAt) cookies.push(`li_at=${this.liAt}`);
@@ -36,9 +22,6 @@ class LinkedInClient {
     return cookies.join('; ');
   }
 
-  /**
-   * Returns authenticated Voyage API headers
-   */
   getHeaders() {
     return {
       'User-Agent': this.userAgent,
@@ -56,29 +39,46 @@ class LinkedInClient {
     };
   }
 
-  /**
-   * Checks if credentials are configured
-   */
   isConfigured() {
     return Boolean(this.liAt && this.jsessionid);
   }
 
   /**
-   * Fetches full LinkedIn profile data by member vanity username or identifier
-   * @param {string} publicIdentifier - e.g. 'williamhgates'
-   * @returns {Promise<Object>} Normalized profile object
+   * Searches LinkedIn for a person by name if not given a direct vanity URL
+   * @param {string} query 
+   * @returns {Promise<string|null>} Resolved vanity identifier
    */
-  async fetchProfile(publicIdentifier) {
+  async searchMember(query) {
+    const searchUrl = `${this.baseURL}/graphql?variables=(start:0,count:1,query:(keywords:${encodeURIComponent(query)},flagshipSearchIntent:SEARCH_SRP))&queryId=voyageSearchDashClusters.2b39f3796d11124e41416e9196feeb10`;
+
+    try {
+      const response = await axios.get(searchUrl, {
+        headers: this.getHeaders(),
+        timeout: 10000
+      });
+
+      const included = response.data?.included || [];
+      const profile = included.find(item => item.$type === 'com.linkedin.voyage.dash.identity.profile.Profile' || item.publicIdentifier);
+
+      return profile?.publicIdentifier || null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  /**
+   * Fetches full LinkedIn profile data
+   * @param {string} identifier 
+   */
+  async fetchProfile(identifier) {
     if (!this.isConfigured()) {
-      throw new Error('LinkedIn credentials (LINKEDIN_LI_AT and LINKEDIN_JSESSIONID) are missing or not configured in backend.');
+      throw new Error('LinkedIn credentials (LINKEDIN_LI_AT and LINKEDIN_JSESSIONID) are missing or not configured in environment variables.');
     }
 
-    if (!publicIdentifier) {
-      throw new Error('Public identifier is required.');
-    }
+    let targetUsername = identifier;
 
-    // Endpoint 1: Primary Voyage Dash Identity Profiles API
-    const profileUrl = `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(publicIdentifier)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`;
+    // Primary Voyage Dash Profiles API
+    const profileUrl = `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`;
 
     try {
       const response = await axios.get(profileUrl, {
@@ -88,59 +88,47 @@ class LinkedInClient {
       });
 
       if (response.status === 401 || response.status === 403) {
-        throw new Error(`LinkedIn authentication failed (Status ${response.status}). Please verify your LI_AT and JSESSIONID cookies.`);
+        throw new Error(`LinkedIn authentication failed (${response.status}). Please check your LINKEDIN_LI_AT and LINKEDIN_JSESSIONID cookies.`);
       }
 
       if (response.status === 404) {
-        throw new Error(`LinkedIn profile '${publicIdentifier}' was not found.`);
+        throw new Error(`LinkedIn profile '${targetUsername}' was not found. Please verify the URL.`);
       }
 
       if (response.status !== 200) {
-        throw new Error(`LinkedIn API responded with status ${response.status}: ${JSON.stringify(response.data)}`);
+        throw new Error(`LinkedIn API returned status ${response.status}.`);
       }
 
-      // Check if data exists in response
       if (!response.data || (!response.data.data && !response.data.included)) {
-        throw new Error(`Empty response returned by LinkedIn for profile '${publicIdentifier}'.`);
+        throw new Error(`Empty response from LinkedIn for '${targetUsername}'.`);
       }
 
-      // Normalize raw Dash graph data
-      const normalizedData = normalizeLinkedInProfile(response.data, publicIdentifier);
+      const normalizedData = normalizeLinkedInProfile(response.data, targetUsername);
       return {
         profile: normalizedData,
         raw: response.data
       };
 
     } catch (error) {
-      // If primary Dash decoration ID changed, try fallback endpoint
       if (error.response?.status === 400 || error.message.includes('decoration')) {
-        return await this.fetchProfileFallback(publicIdentifier);
+        return await this.fetchProfileFallback(targetUsername);
       }
       throw error;
     }
   }
 
-  /**
-   * Fallback profile fetcher using standard identity/profiles endpoint
-   * @param {string} publicIdentifier 
-   */
   async fetchProfileFallback(publicIdentifier) {
     const fallbackUrl = `${this.baseURL}/identity/profiles/${encodeURIComponent(publicIdentifier)}/profileView`;
+    const response = await axios.get(fallbackUrl, {
+      headers: this.getHeaders(),
+      timeout: 15000
+    });
 
-    try {
-      const response = await axios.get(fallbackUrl, {
-        headers: this.getHeaders(),
-        timeout: 15000
-      });
-
-      const normalizedData = normalizeLinkedInProfile(response.data, publicIdentifier);
-      return {
-        profile: normalizedData,
-        raw: response.data
-      };
-    } catch (fallbackError) {
-      throw new Error(`Failed to fetch LinkedIn profile: ${fallbackError.message}`);
-    }
+    const normalizedData = normalizeLinkedInProfile(response.data, publicIdentifier);
+    return {
+      profile: normalizedData,
+      raw: response.data
+    };
   }
 }
 
