@@ -68,6 +68,7 @@ const ProfileSchema = new mongoose.Schema(
     honors: { type: Array, default: [] },
     projects: { type: Array, default: [] },
     stats: { type: Object, default: {} },
+    rawPayload: { type: Object, default: null }, // Stores the full raw Voyager / HTML entity dump
     lastScrapedAt: {
       type: Date,
       default: Date.now,
@@ -80,7 +81,6 @@ const ProfileSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for fast history queries and public identifier lookups
 ProfileSchema.index({ lastScrapedAt: -1 });
 
 module.exports = mongoose.models.Profile || mongoose.model('Profile', ProfileSchema);

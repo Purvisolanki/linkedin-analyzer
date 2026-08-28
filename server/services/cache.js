@@ -12,14 +12,9 @@ class ProfileService {
     this.ttlMs = 1000 * 60 * 60 * 12; // 12 hours cache
   }
 
-  /**
-   * Fetches profile by identifier with single-shot lean query
-   * @param {string} identifier 
-   */
   async getProfile(identifier) {
     const key = identifier.toLowerCase();
 
-    // 1. In-memory fast path (sub-millisecond)
     if (this.memoryCache.has(key)) {
       const entry = this.memoryCache.get(key);
       if (Date.now() - entry.timestamp < this.ttlMs) {
@@ -28,7 +23,6 @@ class ProfileService {
       this.memoryCache.delete(key);
     }
 
-    // 2. Direct MongoDB indexed lookup
     await connectDB();
     if (Profile.db?.readyState === 1) {
       try {
@@ -45,23 +39,17 @@ class ProfileService {
     return null;
   }
 
-  /**
-   * Upserts profile in a single atomic database operation
-   * @param {string} identifier 
-   * @param {Object} data 
-   */
-  async saveProfile(identifier, data) {
+  async saveProfile(identifier, data, rawPayload = null) {
     const key = identifier.toLowerCase();
     const payload = {
       ...data,
       publicIdentifier: key,
+      rawPayload,
       lastScrapedAt: new Date()
     };
 
-    // Update memory cache
     this.memoryCache.set(key, { timestamp: Date.now(), data: payload });
 
-    // Single atomic upsert in MongoDB
     await connectDB();
     if (Profile.db?.readyState === 1) {
       try {
@@ -78,11 +66,6 @@ class ProfileService {
     return payload;
   }
 
-  /**
-   * Single-query batch fetch for recently scraped profiles
-   * Lean projection ensures minimum memory and wire overhead
-   * @param {number} limit 
-   */
   async getHistory(limit = 15) {
     await connectDB();
     if (Profile.db?.readyState === 1) {
@@ -98,7 +81,6 @@ class ProfileService {
       }
     }
 
-    // Memory cache fallback
     return Array.from(this.memoryCache.values())
       .map(e => e.data)
       .sort((a, b) => new Date(b.lastScrapedAt || 0) - new Date(a.lastScrapedAt || 0))

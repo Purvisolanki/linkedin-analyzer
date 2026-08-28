@@ -6,9 +6,6 @@ const { extractLinkedInIdentifier } = require('../utils/validator');
 
 const linkedinClient = new LinkedInClient();
 
-/**
- * Common handler for profile extraction
- */
 async function handleProfileRequest(req, res) {
   const input = req.query.url || req.query.identifier || req.body?.url || req.body?.identifier;
   const refresh = req.query.refresh === 'true' || req.query.refresh === '1' || req.body?.refresh === true;
@@ -16,7 +13,7 @@ async function handleProfileRequest(req, res) {
   if (!input) {
     return res.status(400).json({
       success: false,
-      error: 'Missing required "url" or "identifier" parameter. Example: /api/profile?url=https://linkedin.com/in/williamhgates'
+      error: 'Missing required "url" or "identifier" parameter. Example: /api/profile?url=https://linkedin.com/in/satyanadella'
     });
   }
 
@@ -28,7 +25,7 @@ async function handleProfileRequest(req, res) {
     });
   }
 
-  // 1. Check MongoDB / Cache (unless force refresh requested)
+  // 1. Check MongoDB / Cache
   if (!refresh) {
     const cached = await profileService.getProfile(username);
     if (cached) {
@@ -36,6 +33,7 @@ async function handleProfileRequest(req, res) {
         success: true,
         source: 'mongodb_cache',
         data: cached,
+        rawPayload: cached.rawPayload || null,
         timestamp: new Date().toISOString()
       });
     }
@@ -45,13 +43,14 @@ async function handleProfileRequest(req, res) {
   try {
     const result = await linkedinClient.fetchProfile(username);
     
-    // Save to MongoDB in a single atomic upsert
-    await profileService.saveProfile(username, result.profile);
+    // Save structured data + complete raw payload to MongoDB
+    await profileService.saveProfile(username, result.profile, result.raw);
 
     return res.json({
       success: true,
       source: 'live_linkedin_api',
       data: result.profile,
+      rawPayload: result.raw,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -65,14 +64,9 @@ async function handleProfileRequest(req, res) {
   }
 }
 
-// GET & POST Endpoints
 router.get('/', handleProfileRequest);
 router.post('/', handleProfileRequest);
 
-/**
- * @route   GET /api/profile/history
- * @desc    Fetch recent profiles in a single query
- */
 router.get('/history', async (req, res) => {
   try {
     const history = await profileService.getHistory(15);

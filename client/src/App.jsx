@@ -21,7 +21,8 @@ import {
   FileJson,
   ToggleLeft,
   ToggleRight,
-  DatabaseZap
+  DatabaseZap,
+  Code
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -31,11 +32,12 @@ export default function App() {
   const [urlInput, setUrlInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState(null);
+  const [rawPayload, setRawPayload] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('json'); // 'json' | 'visual' | 'docs'
+  const [activeTab, setActiveTab] = useState('json'); // 'json' | 'raw' | 'visual' | 'docs'
   const [copied, setCopied] = useState(false);
+  const [rawCopied, setRawCopied] = useState(false);
   
-  // Global setting: Bypass cache & always force fresh live fetch
   const [bypassCache, setBypassCache] = useState(() => {
     return localStorage.getItem('bypassCache') === 'true';
   });
@@ -60,8 +62,8 @@ export default function App() {
   };
 
   const sampleProfiles = [
-    { label: 'Bill Gates', url: 'https://www.linkedin.com/in/williamhgates' },
     { label: 'Satya Nadella', url: 'https://www.linkedin.com/in/satyanadella' },
+    { label: 'Bill Gates', url: 'https://www.linkedin.com/in/williamhgates' },
     { label: 'Sundar Pichai', url: 'https://www.linkedin.com/in/sundarpichai' }
   ];
 
@@ -83,28 +85,37 @@ export default function App() {
       }
 
       setProfileData(data.data);
+      setRawPayload(data.rawPayload || null);
     } catch (err) {
       setError(err.message);
       setProfileData(null);
+      setRawPayload(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCopyJson = () => {
-    if (!profileData) return;
-    navigator.clipboard.writeText(JSON.stringify(profileData, null, 2));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyJson = (dataToCopy, isRaw = false) => {
+    if (!dataToCopy) return;
+    const str = typeof dataToCopy === 'string' ? dataToCopy : JSON.stringify(dataToCopy, null, 2);
+    navigator.clipboard.writeText(str);
+    if (isRaw) {
+      setRawCopied(true);
+      setTimeout(() => setRawCopied(false), 2000);
+    } else {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
-  const handleDownloadJson = () => {
-    if (!profileData) return;
-    const blob = new Blob([JSON.stringify(profileData, null, 2)], { type: 'application/json' });
+  const handleDownloadJson = (dataToDownload, filename = 'linkedin-profile.json') => {
+    if (!dataToDownload) return;
+    const str = typeof dataToDownload === 'string' ? dataToDownload : JSON.stringify(dataToDownload, null, 2);
+    const blob = new Blob([str], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${profileData.publicIdentifier || 'linkedin-profile'}.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -163,7 +174,7 @@ export default function App() {
         </h1>
         
         <p className="hero-description">
-          Enter any LinkedIn profile URL to fetch structured profile information, work history, education records, and skills in clean JSON.
+          Enter any LinkedIn profile URL to fetch structured profile information, work history, education records, and raw responses.
         </p>
 
         {/* Search Bar */}
@@ -234,13 +245,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs (Structured JSON, Raw Payload, Visual Profile, API Docs) */}
       <div className="tabs-nav">
         <button 
           className={`tab-nav-btn ${activeTab === 'json' ? 'active' : ''}`}
           onClick={() => setActiveTab('json')}
         >
-          <Code2 size={16} /> JSON Response
+          <Code2 size={16} /> Structured JSON
+        </button>
+        <button 
+          className={`tab-nav-btn ${activeTab === 'raw' ? 'active' : ''}`}
+          onClick={() => setActiveTab('raw')}
+        >
+          <Code size={16} /> Full Raw Response
         </button>
         <button 
           className={`tab-nav-btn ${activeTab === 'visual' ? 'active' : ''}`}
@@ -256,7 +273,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* TAB 1: Structured JSON View (Default) */}
+      {/* TAB 1: Structured JSON View */}
       {activeTab === 'json' && (
         <div className="fade-in">
           <div className="code-viewer-shell">
@@ -267,7 +284,7 @@ export default function App() {
                 <span className="mac-dot" style={{ background: '#27c93f' }} />
               </div>
               <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <FileJson size={14} /> response.json {bypassCache && <span style={{ color: 'var(--accent-primary)' }}>(Live)</span>}
+                <FileJson size={14} /> structured-profile.json
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
@@ -279,16 +296,16 @@ export default function App() {
                     borderColor: copied ? '#10b981' : undefined,
                     color: copied ? '#10b981' : undefined
                   }}
-                  onClick={handleCopyJson}
+                  onClick={() => handleCopyJson(profileData, false)}
                   disabled={!profileData}
                 >
                   {copied ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copied ? 'Copied to Clipboard!' : 'Copy JSON'}</span>
+                  <span>{copied ? 'Copied!' : 'Copy JSON'}</span>
                 </button>
                 <button 
                   className="btn-secondary" 
                   style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
-                  onClick={handleDownloadJson}
+                  onClick={() => handleDownloadJson(profileData, `${profileData?.publicIdentifier || 'profile'}-structured.json`)}
                   disabled={!profileData}
                 >
                   <Download size={14} />
@@ -311,7 +328,62 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB 2: Visual Resume */}
+      {/* TAB 2: Full Raw Response Payload View */}
+      {activeTab === 'raw' && (
+        <div className="fade-in">
+          <div className="code-viewer-shell">
+            <div className="code-header-bar">
+              <div className="code-mac-dots">
+                <span className="mac-dot" style={{ background: '#ff5f56' }} />
+                <span className="mac-dot" style={{ background: '#ffbd2e' }} />
+                <span className="mac-dot" style={{ background: '#27c93f' }} />
+              </div>
+              <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Terminal size={14} /> raw-voyager-response.json
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button 
+                  className="btn-secondary" 
+                  style={{ 
+                    padding: '0.4rem 0.85rem', 
+                    fontSize: '0.82rem',
+                    background: rawCopied ? 'rgba(16, 185, 129, 0.15)' : undefined,
+                    borderColor: rawCopied ? '#10b981' : undefined,
+                    color: rawCopied ? '#10b981' : undefined
+                  }}
+                  onClick={() => handleCopyJson(rawPayload, true)}
+                  disabled={!rawPayload}
+                >
+                  {rawCopied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{rawCopied ? 'Copied Raw!' : 'Copy Full Raw Response'}</span>
+                </button>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                  onClick={() => handleDownloadJson(rawPayload, `${profileData?.publicIdentifier || 'profile'}-raw.json`)}
+                  disabled={!rawPayload}
+                >
+                  <Download size={14} />
+                  <span>Download Raw .json</span>
+                </button>
+              </div>
+            </div>
+
+            {rawPayload ? (
+              <pre className="code-pre-box">
+                {typeof rawPayload === 'object' ? JSON.stringify(rawPayload, null, 2) : String(rawPayload)}
+              </pre>
+            ) : (
+              <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <Terminal size={36} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
+                <p>No raw payload loaded yet. Search for a profile above.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: Visual Resume */}
       {activeTab === 'visual' && (
         <div className="fade-in">
           {loading && (
@@ -516,7 +588,7 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB 3: API Integration Docs */}
+      {/* TAB 4: API Integration Docs */}
       {activeTab === 'docs' && (
         <div className="panel fade-in" style={{ padding: '2.25rem' }}>
           <h2 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem' }}>
