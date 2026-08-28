@@ -93,12 +93,13 @@ class LinkedInClient {
       };
     }
 
-    // 2. Direct Reverse-Engineered Voyager Endpoints
+    // 2. Direct Reverse-Engineered Voyager Endpoints (maxRedirects: 0 to prevent redirect loops)
     const voyagerUrls = [
-      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
-      `https://www.linkedin.com/voyager/api/entities/people/${encodeURIComponent(targetUsername)}`,
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}`,
-      `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(memberIdentity:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9`
+      `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`,
+      `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(memberIdentity:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9`,
+      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
+      `https://www.linkedin.com/voyager/api/entities/people/${encodeURIComponent(targetUsername)}`
     ];
 
     for (const url of voyagerUrls) {
@@ -107,7 +108,8 @@ class LinkedInClient {
         const res = await axios.get(url, {
           headers: this.getVoyagerHeaders(),
           timeout: 8000,
-          validateStatus: (status) => status < 500
+          maxRedirects: 0,
+          validateStatus: (status) => status < 400
         });
 
         console.log(`[Voyager API] Status: ${res.status}`);
@@ -119,7 +121,7 @@ class LinkedInClient {
           };
         }
       } catch (err) {
-        console.warn(`[Voyager API] Note:`, err.message);
+        console.warn(`[Voyager API] Note:`, err.response?.status || err.message);
       }
     }
 
@@ -129,12 +131,16 @@ class LinkedInClient {
       console.log(`[LinkedInClient] Fetching public page: ${pageUrl}`);
       const res = await axios.get(pageUrl, {
         headers: {
-          'User-Agent': this.userAgent,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9'
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"'
         },
         timeout: 8000,
-        validateStatus: (status) => status < 500
+        maxRedirects: 5,
+        validateStatus: (status) => status < 400
       });
 
       if (res.status === 200 && typeof res.data === 'string') {
@@ -148,10 +154,10 @@ class LinkedInClient {
         }
       }
     } catch (e) {
-      console.warn(`[LinkedInClient] Public page note:`, e.message);
+      console.warn(`[LinkedInClient] Public page note:`, e.response?.status || e.message);
     }
 
-    throw new Error(`Could not fetch profile data for '${targetUsername}'.`);
+    throw new Error(`Could not fetch profile data for '${targetUsername}'. Please verify that the vanity username exists and your LINKEDIN_LI_AT cookie is active.`);
   }
 }
 
