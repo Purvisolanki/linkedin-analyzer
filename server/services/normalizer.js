@@ -1,7 +1,7 @@
 /**
- * LinkedIn Entity Normalizer
- * Enhanced with support for Dash collections, multi-locale structures,
- * and deep entity resolution.
+ * Enhanced LinkedIn Profile Normalizer
+ * Extracts complete profile fields: Contact info (email, phones, websites, addresses),
+ * Experience, Education, Skills, Birthdate, and Vector Images.
  */
 
 function extractImageUrl(vectorImage) {
@@ -53,8 +53,12 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
   const included = Array.isArray(rawData.included) ? rawData.included : [];
   const rootData = rawData.data || {};
 
+  // Check if response is from identityDashProfilesByMemberIdentity GraphQL
+  const graphqlElements = rootData?.identityDashProfilesByMemberIdentity?.elements || [];
+  const graphqlProfile = graphqlElements[0] || null;
+
   // 1. Locate primary profile entity
-  let profileEntity = included.find(
+  let profileEntity = graphqlProfile || included.find(
     (item) => item.$type?.includes('profile.Profile') || item.$type?.includes('dash.identity.profile.Profile')
   );
 
@@ -72,7 +76,7 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     profileEntity = rootData;
   }
 
-  // 2. Resolve Multi-locale and Standard Name/Headline
+  // 2. Resolve Names, Headline, Location
   const firstName = profileEntity?.firstName || getLocaleString(profileEntity?.multiLocaleFirstName) || '';
   const lastName = profileEntity?.lastName || getLocaleString(profileEntity?.multiLocaleLastName) || '';
   const fullName = profileEntity?.fullName || `${firstName} ${lastName}`.trim() || requestedUsername;
@@ -80,16 +84,15 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
   const publicIdentifier = profileEntity?.publicIdentifier || requestedUsername;
   const urn = profileEntity?.entityUrn || profileEntity?.urn || rootData.entityUrn || '';
 
-  // Location
   const locationName = profileEntity?.locationName || 
                        profileEntity?.geoLocationName || 
                        profileEntity?.location?.name || 
-                       profileEntity?.geoRegion || '';
+                       profileEntity?.geoRegion || 
+                       profileEntity?.address || '';
 
-  // About / Summary
   const about = profileEntity?.summary || profileEntity?.about || getLocaleString(profileEntity?.multiLocaleSummary) || '';
 
-  // Picture extraction
+  // 3. Pictures
   let profilePicture = null;
   let backgroundPicture = null;
 
@@ -107,7 +110,23 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     backgroundPicture = extractImageUrl(profileEntity.backgroundImage.displayImageReference.vectorImage);
   }
 
-  // 3. Experience (Positions)
+  // 4. Contact Info (Email, Phone, Websites, Instant Messengers, Birthdate)
+  let email = profileEntity?.emailAddress?.emailAddress || profileEntity?.emailAddress || null;
+  let phones = [];
+  if (Array.isArray(profileEntity?.phoneNumbers)) {
+    phones = profileEntity.phoneNumbers.map(p => p.phoneNumber?.number || p.number).filter(Boolean);
+  }
+  let websites = [];
+  if (Array.isArray(profileEntity?.websites)) {
+    websites = profileEntity.websites.map(w => w.url).filter(Boolean);
+  }
+  let birthDate = null;
+  if (profileEntity?.birthDateOn) {
+    const b = profileEntity.birthDateOn;
+    if (b.day && b.month) birthDate = `${b.day}/${b.month}`;
+  }
+
+  // 5. Experience
   const experienceEntities = included.filter((item) =>
     item.$type?.includes('Position') || item.$type?.includes('PositionGroup')
   );
@@ -134,11 +153,8 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     };
   }).filter((item) => item.title || item.company);
 
-  // 4. Education
-  const educationEntities = included.filter((item) =>
-    item.$type?.includes('Education')
-  );
-
+  // 6. Education
+  const educationEntities = included.filter((item) => item.$type?.includes('Education'));
   const education = educationEntities.map((edu) => {
     let schoolLogo = null;
     if (edu.schoolLogo?.['com.linkedin.common.VectorImage']) {
@@ -159,21 +175,15 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     };
   }).filter((item) => item.schoolName);
 
-  // 5. Skills
-  const skillEntities = included.filter((item) =>
-    item.$type?.includes('Skill')
-  );
-
+  // 7. Skills
+  const skillEntities = included.filter((item) => item.$type?.includes('Skill'));
   const skills = skillEntities.map((s) => ({
     name: s.name || s.skillName || getLocaleString(s.multiLocaleName) || '',
     endorsementsCount: s.endorsementCount || s.endorsementsCount || 0
   })).filter((s) => s.name);
 
-  // 6. Certifications
-  const certEntities = included.filter((item) =>
-    item.$type?.includes('Certification')
-  );
-
+  // 8. Certifications
+  const certEntities = included.filter((item) => item.$type?.includes('Certification'));
   const certifications = certEntities.map((c) => ({
     name: c.name || c.authority || '',
     authority: c.authority || c.companyName || '',
@@ -182,11 +192,8 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     licenseNumber: c.licenseNumber || null
   })).filter((c) => c.name);
 
-  // 7. Languages
-  const langEntities = included.filter((item) =>
-    item.$type?.includes('Language')
-  );
-
+  // 9. Languages
+  const langEntities = included.filter((item) => item.$type?.includes('Language'));
   const languages = langEntities.map((l) => ({
     name: l.name || '',
     proficiency: l.proficiency || null
@@ -203,6 +210,12 @@ function normalizeLinkedInProfile(rawData, requestedUsername) {
     about,
     profilePicture,
     backgroundPicture,
+    contactInfo: {
+      email,
+      phones,
+      websites,
+      birthDate
+    },
     experience,
     education,
     skills,

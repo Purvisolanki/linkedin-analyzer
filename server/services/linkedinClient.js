@@ -18,38 +18,24 @@ class LinkedInClient {
     return this.jsessionid.replace(/^"|"$/g, '').trim();
   }
 
-  /**
-   * Creates an authenticated Axios instance with stateful session cookie jar.
-   * Maintains session across redirects and prevents "Maximum number of redirects exceeded" errors.
-   */
   async createSessionClient() {
     const jar = new CookieJar();
     const csrf = this.getCsrfToken();
 
-    // Seed session cookies
     await jar.setCookie(`li_at=${this.liAt}; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
     await jar.setCookie(`JSESSIONID="${csrf}"; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
-    await jar.setCookie('bcookie="v=2&"; Domain=.linkedin.com; Path=/', 'https://www.linkedin.com');
-    await jar.setCookie('lang=v=2&lang=en-us; Domain=.linkedin.com; Path=/', 'https://www.linkedin.com');
 
-    const client = wrapper(axios.create({
+    return wrapper(axios.create({
       jar,
       withCredentials: true,
       headers: {
         'User-Agent': this.userAgent,
-        'Accept': 'application/vnd.linkedin.normalized+json+2.1, application/json, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'application/json',
         'csrf-token': csrf,
         'x-restli-protocol-version': '2.0.0',
-        'x-li-lang': 'en_US',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin',
         'Referer': 'https://www.linkedin.com/feed/'
       }
     }));
-
-    return client;
   }
 
   isConfigured() {
@@ -64,36 +50,37 @@ class LinkedInClient {
     const targetUsername = identifier.trim();
     const sessionClient = await this.createSessionClient();
 
-    // 1. Direct REST & Voyager API Calls using stateful CookieJar session
+    // Endpoints including the exact GraphQL contact info query from your script:
+    // queryId: voyagerIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9
     const voyagerUrls = [
+      `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(memberIdentity:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9`,
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}`,
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`,
-      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
-      `https://www.linkedin.com/voyager/api/graphql?variables=(vanityName:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.622b7b5dc6439546b4ec2b55b9ebca72`
+      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`
     ];
 
     for (const url of voyagerUrls) {
       try {
-        console.log(`[Voyager API Session] Calling: ${url}`);
+        console.log(`[Voyager API] Requesting: ${url}`);
         const res = await sessionClient.get(url, {
           timeout: 10000,
           validateStatus: (status) => status < 500
         });
 
-        console.log(`[Voyager API Session] Response Status: ${res.status}`);
-        if (res.status === 200 && res.data && (res.data.data || res.data.included)) {
-          console.log(`[LinkedInClient] ✅ Successfully extracted data from Voyager API!`);
+        console.log(`[Voyager API] Response Status: ${res.status}`);
+        if (res.status === 200 && res.data && (res.data.data || res.data.included || res.data.elements)) {
+          console.log(`[LinkedInClient] ✅ Successfully resolved full profile via Voyager API!`);
           return {
             profile: normalizeLinkedInProfile(res.data, targetUsername),
             raw: res.data
           };
         }
       } catch (err) {
-        console.warn(`[Voyager API Session] Note:`, err.message);
+        console.warn(`[Voyager API] Note:`, err.message);
       }
     }
 
-    // 2. Public HTML DOM Parser fallback
+    // Public HTML DOM Parser fallback
     try {
       const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
       console.log(`[LinkedInClient] Fetching public page: ${pageUrl}`);
@@ -107,7 +94,6 @@ class LinkedInClient {
         validateStatus: (status) => status < 500
       });
 
-      console.log(`[LinkedInClient] Public Page Status: ${res.status}`);
       if (res.status === 200 && typeof res.data === 'string') {
         const parsedProfile = parseHtmlProfile(res.data, targetUsername);
         if (parsedProfile) {
