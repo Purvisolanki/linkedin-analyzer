@@ -8,14 +8,17 @@ import {
   Award, 
   Globe, 
   Copy, 
-  Check,
+  Check, 
   Download, 
   ExternalLink,
   Sun,
   Moon,
   ArrowRight,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  Terminal,
+  FileJson
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -28,6 +31,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('visual');
   const [copied, setCopied] = useState(false);
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -56,7 +60,7 @@ export default function App() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Could not fetch profile.');
+        throw new Error(data.error || 'Could not retrieve LinkedIn profile.');
       }
 
       setProfileData(data.data);
@@ -81,20 +85,22 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${profileData.publicIdentifier || 'profile'}.json`;
+    a.download = `${profileData.publicIdentifier || 'linkedin-profile'}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="app-container">
-      {/* Clean Navbar */}
+      {/* Professional Top Navigation */}
       <header className="navbar">
         <div className="brand">
-          <div className="brand-logo">in</div>
+          <div className="brand-logo">
+            <Terminal size={20} color="#ffffff" />
+          </div>
           <div>
-            <div className="brand-title">Profile API</div>
-            <div className="brand-tag">LinkedIn Data Extractor</div>
+            <div className="brand-title">LinkedIn Profile API</div>
+            <div className="brand-tag">High-Performance Data Service</div>
           </div>
         </div>
 
@@ -103,20 +109,21 @@ export default function App() {
             className="theme-toggle-btn" 
             onClick={toggleTheme} 
             title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            aria-label="Toggle Theme"
           >
             {theme === 'dark' ? <Sun size={18} color="#f59e0b" /> : <Moon size={18} color="#6366f1" />}
           </button>
         </div>
       </header>
 
-      {/* Hero & Search */}
+      {/* Main Search Panel */}
       <section className="panel hero-section">
         <h1 className="hero-headline">
-          Get <span className="gradient-text">LinkedIn Profile Data</span> as JSON
+          LinkedIn Profile Data <span className="gradient-text">Extractor</span>
         </h1>
         
         <p className="hero-description">
-          Enter any public LinkedIn profile URL to extract structured profile information, work history, education, and skills.
+          Enter any LinkedIn profile URL to fetch structured profile information, work history, education records, and skills in clean JSON.
         </p>
 
         {/* Search Bar */}
@@ -131,7 +138,7 @@ export default function App() {
           <input 
             type="text"
             className="search-input-field"
-            placeholder="Paste LinkedIn URL (e.g. https://www.linkedin.com/in/williamhgates)"
+            placeholder="Paste LinkedIn URL (e.g., https://www.linkedin.com/in/williamhgates)"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
           />
@@ -143,18 +150,18 @@ export default function App() {
             {loading ? (
               <>
                 <div className="spinner-ring" />
-                <span>Fetching...</span>
+                <span>Processing...</span>
               </>
             ) : (
               <>
-                <span>Search</span>
+                <span>Fetch Profile</span>
                 <ArrowRight size={15} />
               </>
             )}
           </button>
         </form>
 
-        {/* Sample Pills */}
+        {/* Quick Demo Selector */}
         <div className="quick-pills">
           <span className="quick-pill-label">Examples:</span>
           {sampleProfiles.map((item, idx) => (
@@ -173,7 +180,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* Error Alert */}
+      {/* Error Alert Display */}
       {error && (
         <div className="panel fade-in" style={{ padding: '1.25rem 1.5rem', marginBottom: '2rem', borderColor: '#ef4444', background: 'rgba(239, 68, 68, 0.08)' }}>
           <div style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.95rem' }}>
@@ -181,7 +188,7 @@ export default function App() {
           </div>
           {error.includes('credentials') && (
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
-              Add <code>LINKEDIN_LI_AT</code> and <code>LINKEDIN_JSESSIONID</code> in your Vercel Environment Variables.
+              Please configure <code>LINKEDIN_LI_AT</code> and <code>LINKEDIN_JSESSIONID</code> in your Vercel project settings.
             </div>
           )}
         </div>
@@ -193,7 +200,7 @@ export default function App() {
           className={`tab-nav-btn ${activeTab === 'visual' ? 'active' : ''}`}
           onClick={() => setActiveTab('visual')}
         >
-          <User size={16} /> Profile View
+          <User size={16} /> Profile Overview
         </button>
         <button 
           className={`tab-nav-btn ${activeTab === 'json' ? 'active' : ''}`}
@@ -205,7 +212,7 @@ export default function App() {
           className={`tab-nav-btn ${activeTab === 'docs' ? 'active' : ''}`}
           onClick={() => setActiveTab('docs')}
         >
-          <Globe size={16} /> API Docs
+          <Globe size={16} /> API Integration
         </button>
       </div>
 
@@ -215,19 +222,19 @@ export default function App() {
           {loading && (
             <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
               <div className="spinner-ring" style={{ width: 32, height: 32, borderWidth: 3, margin: '0 auto 1.25rem', borderColor: 'rgba(99, 102, 241, 0.2)', borderTopColor: 'var(--accent-primary)' }} />
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.3rem' }}>Fetching Profile...</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Reading profile details and formatting response</p>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.3rem' }}>Retrieving Profile Data...</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Communicating with LinkedIn endpoint and normalizing response</p>
             </div>
           )}
 
           {!loading && !profileData && !error && (
-            <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+            <div className="panel" style={{ textAlign: 'center', padding: '4.5rem 2rem' }}>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem', color: 'var(--text-muted)' }}>
                 <User size={26} />
               </div>
               <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem' }}>No Profile Loaded</h3>
               <p style={{ color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', fontSize: '0.92rem' }}>
-                Enter a profile URL above or pick an example to view details.
+                Paste a LinkedIn profile URL in the search box above to get started.
               </p>
             </div>
           )}
@@ -263,7 +270,7 @@ export default function App() {
                         rel="noreferrer"
                         className="btn-secondary"
                       >
-                        <ExternalLink size={14} /> Open in LinkedIn
+                        <ExternalLink size={14} /> View on LinkedIn
                       </a>
                     </div>
                   </div>
@@ -287,7 +294,7 @@ export default function App() {
 
                   {profileData.about && (
                     <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '1.25rem' }}>
-                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>About</h4>
+                      <h4 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>About</h4>
                       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.94rem', whiteSpace: 'pre-line' }}>
                         {profileData.about}
                       </p>
@@ -296,7 +303,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Profile Details Grid */}
+              {/* Grid Content: Experience, Education, Skills */}
               <div className="profile-content-grid">
                 <div>
                   {/* Experience */}
@@ -307,7 +314,7 @@ export default function App() {
                     </h3>
                     
                     {(!profileData.experience || profileData.experience.length === 0) ? (
-                      <p style={{ color: 'var(--text-muted)' }}>No experience details listed.</p>
+                      <p style={{ color: 'var(--text-muted)' }}>No experience history available.</p>
                     ) : (
                       profileData.experience.map((exp, i) => (
                         <div key={i} className="experience-card">
@@ -333,7 +340,7 @@ export default function App() {
                     </h3>
 
                     {(!profileData.education || profileData.education.length === 0) ? (
-                      <p style={{ color: 'var(--text-muted)' }}>No education records listed.</p>
+                      <p style={{ color: 'var(--text-muted)' }}>No education records found.</p>
                     ) : (
                       profileData.education.map((edu, i) => (
                         <div key={i} className="experience-card">
@@ -353,7 +360,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Right Column: Skills, Certifications, Languages */}
+                {/* Right: Skills, Certifications, Languages */}
                 <div>
                   {/* Skills */}
                   <div className="panel" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
@@ -414,7 +421,7 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB 2: Clean JSON Viewer */}
+      {/* TAB 2: Clean Structured JSON with 1-Click Clipboard */}
       {activeTab === 'json' && (
         <div className="fade-in">
           <div className="code-viewer-shell">
@@ -424,27 +431,33 @@ export default function App() {
                 <span className="mac-dot" style={{ background: '#ffbd2e' }} />
                 <span className="mac-dot" style={{ background: '#27c93f' }} />
               </div>
-              <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                output.json
+              <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <FileJson size={14} /> response.json
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
                   className="btn-secondary" 
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                  style={{ 
+                    padding: '0.4rem 0.85rem', 
+                    fontSize: '0.82rem',
+                    background: copied ? 'rgba(16, 185, 129, 0.15)' : undefined,
+                    borderColor: copied ? '#10b981' : undefined,
+                    color: copied ? '#10b981' : undefined
+                  }}
                   onClick={handleCopyJson}
                   disabled={!profileData}
                 >
-                  {copied ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copied ? 'Copied to Clipboard!' : 'Copy JSON'}</span>
                 </button>
                 <button 
                   className="btn-secondary" 
-                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
                   onClick={handleDownloadJson}
                   disabled={!profileData}
                 >
                   <Download size={14} />
-                  <span>Download</span>
+                  <span>Download .json</span>
                 </button>
               </div>
             </div>
@@ -454,8 +467,9 @@ export default function App() {
                 {JSON.stringify(profileData, null, 2)}
               </pre>
             ) : (
-              <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No data loaded yet. Search for a profile first.
+              <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <Code2 size={36} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
+                <p>No JSON data loaded yet. Search for a profile above to generate JSON.</p>
               </div>
             )}
           </div>
@@ -464,12 +478,12 @@ export default function App() {
 
       {/* TAB 3: API Integration Docs */}
       {activeTab === 'docs' && (
-        <div className="panel fade-in" style={{ padding: '2rem' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-            API Usage
+        <div className="panel fade-in" style={{ padding: '2.25rem' }}>
+          <h2 style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+            API Reference
           </h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.75rem', fontSize: '0.95rem' }}>
-            Call the API from your code or automation tool:
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.75rem', fontSize: '0.92rem' }}>
+            Integrate this API into your applications using standard HTTP requests:
           </p>
 
           <div className="api-doc-block">
@@ -478,7 +492,7 @@ export default function App() {
               <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>/api/profile?url=&#123;LINKEDIN_URL&#125;</code>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-              Returns clean JSON with name, headline, experience, education, skills, and image URLs.
+              Pass a LinkedIn profile URL or vanity username as query parameter. Returns structured JSON.
             </p>
           </div>
 
@@ -488,7 +502,7 @@ export default function App() {
               <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>/api/profile</code>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '0.5rem' }}>
-              Send JSON body:
+              Pass JSON payload:
             </p>
             <pre style={{ background: 'var(--bg-code)', padding: '0.75rem 1rem', borderRadius: 8, fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#93c5fd' }}>
 {`{
@@ -499,9 +513,27 @@ export default function App() {
         </div>
       )}
 
-      {/* Clean Footer */}
-      <footer style={{ textAlign: 'center', marginTop: '3.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-        LinkedIn Profile API
+      {/* Dynamic Professional Footer */}
+      <footer style={{ 
+        textAlign: 'center', 
+        marginTop: '4rem', 
+        paddingTop: '1.5rem', 
+        borderTop: '1px solid var(--border-subtle)', 
+        color: 'var(--text-muted)', 
+        fontSize: '0.86rem' 
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.35rem' }}>
+          <span>© {currentYear} LinkedIn Profile API</span>
+          <span>•</span>
+          <span>All rights reserved</span>
+          <span>•</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+            <ShieldCheck size={14} color="#10b981" /> Public HTTPS API
+          </span>
+        </div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', opacity: 0.8 }}>
+          Developed by Purvi Solanki
+        </div>
       </footer>
     </div>
   );
