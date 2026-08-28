@@ -1,11 +1,39 @@
 /**
- * Profile Parser for LinkedIn Embedded HTML & Schema JSON-LD
+ * Robust HTML and Meta tag Parser for LinkedIn Public Profiles
  */
 
 function parseHtmlProfile(html, username) {
   if (!html || typeof html !== 'string') return null;
 
-  // 1. Try extracting JSON-LD schema (Structured Metadata)
+  // 1. Check for Embedded JSON inside <code> tags
+  const codeMatches = html.match(/<code[^>]*>(.*?)<\/code>/gs) || [];
+  for (const block of codeMatches) {
+    const innerJson = block.replace(/<\/?code[^>]*>/g, '').trim();
+    try {
+      const parsed = JSON.parse(innerJson);
+      const profile = parsed?.data?.data || parsed?.data || parsed;
+      if (profile.publicIdentifier || profile.firstName) {
+        return {
+          publicIdentifier: profile.publicIdentifier || username,
+          fullName: `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || username,
+          firstName: profile.firstName || '',
+          lastName: profile.lastName || '',
+          headline: profile.headline || profile.occupation || '',
+          location: profile.locationName || profile.geoLocationName || '',
+          about: profile.summary || '',
+          profilePicture: profile.picture?.['com.linkedin.common.VectorImage']?.rootUrl || null,
+          experience: [],
+          education: [],
+          skills: [],
+          certifications: [],
+          languages: [],
+          stats: { experienceCount: 0, educationCount: 0, skillsCount: 0, certificationsCount: 0, languagesCount: 0 }
+        };
+      }
+    } catch (e) {}
+  }
+
+  // 2. Try JSON-LD Metadata Schema
   const jsonLdMatches = html.match(/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs) || [];
   let schemaData = null;
 
@@ -13,25 +41,36 @@ function parseHtmlProfile(html, username) {
     const raw = match.replace(/<\/?script[^>]*>/g, '').trim();
     try {
       const parsed = JSON.parse(raw);
-      if (parsed['@type'] === 'Person' || (parsed['@graph'] && Array.isArray(parsed['@graph']))) {
-        schemaData = parsed['@type'] === 'Person' ? parsed : parsed['@graph'].find(i => i['@type'] === 'Person');
+      if (parsed['@type'] === 'Person') {
+        schemaData = parsed;
+        break;
+      }
+      if (Array.isArray(parsed['@graph'])) {
+        schemaData = parsed['@graph'].find(i => i['@type'] === 'Person');
         if (schemaData) break;
       }
     } catch (e) {}
   }
 
-  // 2. Parse OpenGraph & Meta tags from HTML
+  // 3. Fallback extraction of Meta and OpenGraph tags
   const getMeta = (prop) => {
-    const m = html.match(new RegExp(`<meta\\s+(?:property|name)=["'](?:og:|twitter:)?${prop}["']\\s+content=["'](.*?)["']`, 'i')) ||
-              html.match(new RegExp(`<meta\\s+content=["'](.*?)["']\\s+(?:property|name)=["'](?:og:|twitter:)?${prop}["']`, 'i'));
-    return m ? m[1] : null;
+    const patterns = [
+      new RegExp(`<meta\\s+property=["']og:${prop}["']\\s+content=["'](.*?)["']`, 'i'),
+      new RegExp(`<meta\\s+content=["'](.*?)["']\\s+property=["']og:${prop}["']`, 'i'),
+      new RegExp(`<meta\\s+name=["']${prop}["']\\s+content=["'](.*?)["']`, 'i'),
+      new RegExp(`<meta\\s+content=["'](.*?)["']\\s+name=["']${prop}["']`, 'i')
+    ];
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m && m[1]) return m[1].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim();
+    }
+    return null;
   };
 
   const titleMeta = getMeta('title') || '';
   const descMeta = getMeta('description') || '';
   const imageMeta = getMeta('image') || null;
 
-  // 3. Fallback extraction of Full Name & Headline
   let fullName = schemaData?.name || '';
   let headline = schemaData?.jobTitle || '';
   let location = schemaData?.address?.addressLocality || '';
@@ -39,20 +78,19 @@ function parseHtmlProfile(html, username) {
   let profilePicture = schemaData?.image?.contentUrl || schemaData?.image || imageMeta;
 
   if (!fullName && titleMeta) {
-    // LinkedIn format is typically "Bill Gates - Co-chair | LinkedIn"
-    const parts = titleMeta.split(/[-–|]/);
+    const cleanTitle = titleMeta.replace(/\s*\|\s*LinkedIn.*$/i, '').trim();
+    const parts = cleanTitle.split(/[-–—]/);
     if (parts.length > 0) fullName = parts[0].trim();
-    if (parts.length > 1) headline = parts[1].trim();
+    if (parts.length > 1) headline = parts.slice(1).join(' - ').trim();
   }
 
-  // 4. Extract Experience from JSON-LD or meta descriptions
   const experience = [];
   if (schemaData?.worksFor) {
     const works = Array.isArray(schemaData.worksFor) ? schemaData.worksFor : [schemaData.worksFor];
     works.forEach(w => {
       if (w.name) {
         experience.push({
-          title: headline || 'Member',
+          title: headline || 'Current Position',
           company: w.name,
           dateRange: 'Present',
           location: location || ''
@@ -61,7 +99,6 @@ function parseHtmlProfile(html, username) {
     });
   }
 
-  // 5. Extract Education
   const education = [];
   if (schemaData?.alumniOf) {
     const schools = Array.isArray(schemaData.alumniOf) ? schemaData.alumniOf : [schemaData.alumniOf];
@@ -77,34 +114,36 @@ function parseHtmlProfile(html, username) {
     });
   }
 
-  if (!fullName && !headline && !about) {
-    return null;
+  // If title was found, we guarantee a successful parsed profile
+  if (fullName || titleMeta || descMeta) {
+    const finalName = fullName || username;
+    return {
+      publicIdentifier: username,
+      urn: '',
+      fullName: finalName,
+      firstName: finalName.split(' ')[0] || '',
+      lastName: finalName.split(' ').slice(1).join(' ') || '',
+      headline: headline || 'LinkedIn Member',
+      location: location || '',
+      about: about || '',
+      profilePicture,
+      backgroundPicture: null,
+      experience,
+      education,
+      skills: [],
+      certifications: [],
+      languages: [],
+      stats: {
+        experienceCount: experience.length,
+        educationCount: education.length,
+        skillsCount: 0,
+        certificationsCount: 0,
+        languagesCount: 0
+      }
+    };
   }
 
-  return {
-    publicIdentifier: username,
-    urn: '',
-    fullName: fullName || username,
-    firstName: fullName ? fullName.split(' ')[0] : '',
-    lastName: fullName ? fullName.split(' ').slice(1).join(' ') : '',
-    headline: headline || '',
-    location: location || '',
-    about: about || '',
-    profilePicture,
-    backgroundPicture: null,
-    experience,
-    education,
-    skills: [],
-    certifications: [],
-    languages: [],
-    stats: {
-      experienceCount: experience.length,
-      educationCount: education.length,
-      skillsCount: 0,
-      certificationsCount: 0,
-      languagesCount: 0
-    }
-  };
+  return null;
 }
 
 module.exports = {
