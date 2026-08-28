@@ -50,13 +50,12 @@ class LinkedInClient {
     const targetUsername = identifier.trim();
     const sessionClient = await this.createSessionClient();
 
-    // Endpoints including the exact GraphQL contact info query from your script:
-    // queryId: voyagerIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9
+    // Endpoints including the exact entities and GraphQL endpoints
     const voyagerUrls = [
-      `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(memberIdentity:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9`,
+      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
+      `https://www.linkedin.com/voyager/api/entities/people/${encodeURIComponent(targetUsername)}`,
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}`,
-      `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`,
-      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`
+      `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(memberIdentity:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.c7452e58fa37646d09dae4920fc5b4b9`
     ];
 
     for (const url of voyagerUrls) {
@@ -68,7 +67,7 @@ class LinkedInClient {
         });
 
         console.log(`[Voyager API] Response Status: ${res.status}`);
-        if (res.status === 200 && res.data && (res.data.data || res.data.included || res.data.elements)) {
+        if (res.status === 200 && res.data && (res.data.data || res.data.included || res.data.elements || res.data.entityUrn)) {
           console.log(`[LinkedInClient] ✅ Successfully resolved full profile via Voyager API!`);
           return {
             profile: normalizeLinkedInProfile(res.data, targetUsername),
