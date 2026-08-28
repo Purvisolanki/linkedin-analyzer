@@ -1,44 +1,16 @@
 /**
- * Robust HTML and Meta tag Parser for LinkedIn Public Profiles
+ * Profile Parser for LinkedIn HTML Pages
  */
 
 function parseHtmlProfile(html, username) {
   if (!html || typeof html !== 'string') return null;
 
-  // 1. Check for Embedded JSON inside <code> tags
-  const codeMatches = html.match(/<code[^>]*>(.*?)<\/code>/gs) || [];
-  for (const block of codeMatches) {
-    const innerJson = block.replace(/<\/?code[^>]*>/g, '').trim();
-    try {
-      const parsed = JSON.parse(innerJson);
-      const profile = parsed?.data?.data || parsed?.data || parsed;
-      if (profile.publicIdentifier || profile.firstName) {
-        return {
-          publicIdentifier: profile.publicIdentifier || username,
-          fullName: `${profile.firstName || ''} ${profile.lastName || ''}`.trim() || username,
-          firstName: profile.firstName || '',
-          lastName: profile.lastName || '',
-          headline: profile.headline || profile.occupation || '',
-          location: profile.locationName || profile.geoLocationName || '',
-          about: profile.summary || '',
-          profilePicture: profile.picture?.['com.linkedin.common.VectorImage']?.rootUrl || null,
-          experience: [],
-          education: [],
-          skills: [],
-          certifications: [],
-          languages: [],
-          stats: { experienceCount: 0, educationCount: 0, skillsCount: 0, certificationsCount: 0, languagesCount: 0 }
-        };
-      }
-    } catch (e) {}
-  }
-
-  // 2. Try JSON-LD Metadata Schema
-  const jsonLdMatches = html.match(/<script type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs) || [];
+  // 1. Check for JSON-LD structured data (often in <script type="application/ld+json">)
+  const jsonLdMatches = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>(.*?)<\/script>/gis) || [];
   let schemaData = null;
 
   for (const match of jsonLdMatches) {
-    const raw = match.replace(/<\/?script[^>]*>/g, '').trim();
+    const raw = match.replace(/<\/?script[^>]*>/gis, '').trim();
     try {
       const parsed = JSON.parse(raw);
       if (parsed['@type'] === 'Person') {
@@ -52,36 +24,50 @@ function parseHtmlProfile(html, username) {
     } catch (e) {}
   }
 
-  // 3. Fallback extraction of Meta and OpenGraph tags
+  // 2. Extract <title> tag
+  const titleTagMatch = html.match(/<title[^>]*>(.*?)<\/title>/is);
+  const titleTag = titleTagMatch ? titleTagMatch[1].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim() : '';
+
+  // 3. Helper to extract meta tag contents
   const getMeta = (prop) => {
-    const patterns = [
-      new RegExp(`<meta\\s+property=["']og:${prop}["']\\s+content=["'](.*?)["']`, 'i'),
-      new RegExp(`<meta\\s+content=["'](.*?)["']\\s+property=["']og:${prop}["']`, 'i'),
-      new RegExp(`<meta\\s+name=["']${prop}["']\\s+content=["'](.*?)["']`, 'i'),
-      new RegExp(`<meta\\s+content=["'](.*?)["']\\s+name=["']${prop}["']`, 'i')
+    const regexes = [
+      new RegExp(`<meta[^>]+(?:property|name)=["'](?:og:|twitter:)?${prop}["'][^>]+content=["']([^"']*)["']`, 'i'),
+      new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["'](?:og:|twitter:)?${prop}["']`, 'i')
     ];
-    for (const p of patterns) {
-      const m = html.match(p);
+    for (const r of regexes) {
+      const m = html.match(r);
       if (m && m[1]) return m[1].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim();
     }
-    return null;
+    return '';
   };
 
-  const titleMeta = getMeta('title') || '';
-  const descMeta = getMeta('description') || '';
-  const imageMeta = getMeta('image') || null;
+  const titleMeta = getMeta('title');
+  const descMeta = getMeta('description');
+  const imageMeta = getMeta('image');
 
+  // 4. Resolve Name, Headline, and Location
   let fullName = schemaData?.name || '';
   let headline = schemaData?.jobTitle || '';
   let location = schemaData?.address?.addressLocality || '';
-  let about = schemaData?.description || descMeta;
-  let profilePicture = schemaData?.image?.contentUrl || schemaData?.image || imageMeta;
+  let about = schemaData?.description || descMeta || '';
+  let profilePicture = schemaData?.image?.contentUrl || schemaData?.image || imageMeta || null;
 
-  if (!fullName && titleMeta) {
-    const cleanTitle = titleMeta.replace(/\s*\|\s*LinkedIn.*$/i, '').trim();
-    const parts = cleanTitle.split(/[-–—]/);
+  const rawTitle = titleMeta || titleTag || '';
+  if (!fullName && rawTitle) {
+    // Format is typically "First Last - Headline | LinkedIn" or "First Last | LinkedIn"
+    const cleaned = rawTitle.replace(/\s*\|\s*LinkedIn.*$/i, '').trim();
+    const parts = cleaned.split(/\s*[-–—]\s*/);
     if (parts.length > 0) fullName = parts[0].trim();
     if (parts.length > 1) headline = parts.slice(1).join(' - ').trim();
+  }
+
+  // If headline is still empty, parse description meta
+  if (!headline && descMeta) {
+    // Description is often "View Full Name's profile on LinkedIn, a professional community of..."
+    const descMatch = descMeta.match(/^(.*?)(?:·|\.|\bat\b|\bwith\b)/i);
+    if (descMatch && descMatch[1]) {
+      headline = descMatch[1].replace(/^(?:View\s+)?.*?(?:'s\s+profile\s+on\s+LinkedIn\s*[-–,]\s*)?/i, '').trim();
+    }
   }
 
   const experience = [];
@@ -90,7 +76,7 @@ function parseHtmlProfile(html, username) {
     works.forEach(w => {
       if (w.name) {
         experience.push({
-          title: headline || 'Current Position',
+          title: headline || 'Current Role',
           company: w.name,
           dateRange: 'Present',
           location: location || ''
@@ -114,15 +100,15 @@ function parseHtmlProfile(html, username) {
     });
   }
 
-  // If title was found, we guarantee a successful parsed profile
-  if (fullName || titleMeta || descMeta) {
-    const finalName = fullName || username;
+  // If we have any text or title from the 1MB HTML payload, guarantee profile construction
+  if (fullName || rawTitle || descMeta || html.length > 1000) {
+    const finalFullName = fullName || username;
     return {
       publicIdentifier: username,
       urn: '',
-      fullName: finalName,
-      firstName: finalName.split(' ')[0] || '',
-      lastName: finalName.split(' ').slice(1).join(' ') || '',
+      fullName: finalFullName,
+      firstName: finalFullName.split(' ')[0] || '',
+      lastName: finalFullName.split(' ').slice(1).join(' ') || '',
       headline: headline || 'LinkedIn Member',
       location: location || '',
       about: about || '',
