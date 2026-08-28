@@ -29,7 +29,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('visual');
+  const [activeTab, setActiveTab] = useState('json'); // 'json' | 'visual' | 'docs'
   const [copied, setCopied] = useState(false);
   const currentYear = new Date().getFullYear();
 
