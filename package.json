@@ -8,10 +8,16 @@
     "server": "node server/index.js",
     "client": "npm --prefix client run dev",
     "dev": "node server/index.js",
-    "build": "npm --prefix client install && npm --prefix client run build",
-    "postinstall": "npm --prefix client install && npm --prefix client run build"
+    "build": "cd client && npm install && npm run build"
   },
-  "keywords": ["linkedin", "api", "reverse-engineering", "scraper", "voyage", "mern"],
+  "keywords": [
+    "linkedin",
+    "api",
+    "reverse-engineering",
+    "scraper",
+    "voyage",
+    "mern"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
