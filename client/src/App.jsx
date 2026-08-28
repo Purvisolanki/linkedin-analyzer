@@ -18,7 +18,10 @@ import {
   Sparkles,
   ShieldCheck,
   Terminal,
-  FileJson
+  FileJson,
+  ToggleLeft,
+  ToggleRight,
+  DatabaseZap
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -31,6 +34,12 @@ export default function App() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('json'); // 'json' | 'visual' | 'docs'
   const [copied, setCopied] = useState(false);
+  
+  // Global setting: Bypass cache & always force fresh live fetch
+  const [bypassCache, setBypassCache] = useState(() => {
+    return localStorage.getItem('bypassCache') === 'true';
+  });
+
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
@@ -40,6 +49,14 @@ export default function App() {
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const toggleBypassCache = () => {
+    setBypassCache(prev => {
+      const next = !prev;
+      localStorage.setItem('bypassCache', String(next));
+      return next;
+    });
   };
 
   const sampleProfiles = [
@@ -54,8 +71,10 @@ export default function App() {
     setLoading(true);
     setError(null);
 
+    const shouldRefresh = forceRefresh || bypassCache;
+
     try {
-      const endpoint = `${API_BASE}/profile?url=${encodeURIComponent(targetUrl.trim())}${forceRefresh ? '&refresh=true' : ''}`;
+      const endpoint = `${API_BASE}/profile?url=${encodeURIComponent(targetUrl.trim())}${shouldRefresh ? '&refresh=true' : ''}`;
       const res = await fetch(endpoint);
       const data = await res.json();
 
@@ -92,7 +111,7 @@ export default function App() {
 
   return (
     <div className="app-container">
-      {/* Professional Top Navigation */}
+      {/* Top Navbar with Global Controls */}
       <header className="navbar">
         <div className="brand">
           <div className="brand-logo">
@@ -100,11 +119,32 @@ export default function App() {
           </div>
           <div>
             <div className="brand-title">LinkedIn Profile API</div>
-            <div className="brand-tag">High-Performance Data Service</div>
+            <div className="brand-tag">Real-Time Data Engine</div>
           </div>
         </div>
 
         <div className="nav-actions">
+          {/* Global Cache Toggle Setting */}
+          <button 
+            className="btn-secondary" 
+            style={{ 
+              padding: '0.45rem 0.85rem', 
+              fontSize: '0.82rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              borderColor: bypassCache ? 'var(--accent-primary)' : undefined,
+              background: bypassCache ? 'rgba(99, 102, 241, 0.12)' : undefined,
+              color: bypassCache ? 'var(--accent-primary)' : 'var(--text-secondary)'
+            }}
+            onClick={toggleBypassCache}
+            title={bypassCache ? 'Bypass Cache Enabled: Always hits LinkedIn directly' : 'Cache Enabled: Serves saved records first'}
+          >
+            <DatabaseZap size={14} color={bypassCache ? 'var(--accent-primary)' : 'var(--text-muted)'} />
+            <span>Live Fetch: <strong>{bypassCache ? 'Always Fresh' : 'Cached'}</strong></span>
+            {bypassCache ? <ToggleRight size={18} color="var(--accent-primary)" /> : <ToggleLeft size={18} color="var(--text-muted)" />}
+          </button>
+
           <button 
             className="theme-toggle-btn" 
             onClick={toggleTheme} 
@@ -138,7 +178,7 @@ export default function App() {
           <input 
             type="text"
             className="search-input-field"
-            placeholder="Paste LinkedIn URL (e.g., https://www.linkedin.com/in/williamhgates)"
+            placeholder="Paste LinkedIn URL (e.g., https://www.linkedin.com/in/satyanadella)"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
           />
@@ -197,16 +237,16 @@ export default function App() {
       {/* Navigation Tabs */}
       <div className="tabs-nav">
         <button 
-          className={`tab-nav-btn ${activeTab === 'visual' ? 'active' : ''}`}
-          onClick={() => setActiveTab('visual')}
-        >
-          <User size={16} /> Profile Overview
-        </button>
-        <button 
           className={`tab-nav-btn ${activeTab === 'json' ? 'active' : ''}`}
           onClick={() => setActiveTab('json')}
         >
           <Code2 size={16} /> JSON Response
+        </button>
+        <button 
+          className={`tab-nav-btn ${activeTab === 'visual' ? 'active' : ''}`}
+          onClick={() => setActiveTab('visual')}
+        >
+          <User size={16} /> Profile Overview
         </button>
         <button 
           className={`tab-nav-btn ${activeTab === 'docs' ? 'active' : ''}`}
@@ -216,7 +256,62 @@ export default function App() {
         </button>
       </div>
 
-      {/* TAB 1: Visual Resume */}
+      {/* TAB 1: Structured JSON View (Default) */}
+      {activeTab === 'json' && (
+        <div className="fade-in">
+          <div className="code-viewer-shell">
+            <div className="code-header-bar">
+              <div className="code-mac-dots">
+                <span className="mac-dot" style={{ background: '#ff5f56' }} />
+                <span className="mac-dot" style={{ background: '#ffbd2e' }} />
+                <span className="mac-dot" style={{ background: '#27c93f' }} />
+              </div>
+              <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <FileJson size={14} /> response.json {bypassCache && <span style={{ color: 'var(--accent-primary)' }}>(Live)</span>}
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button 
+                  className="btn-secondary" 
+                  style={{ 
+                    padding: '0.4rem 0.85rem', 
+                    fontSize: '0.82rem',
+                    background: copied ? 'rgba(16, 185, 129, 0.15)' : undefined,
+                    borderColor: copied ? '#10b981' : undefined,
+                    color: copied ? '#10b981' : undefined
+                  }}
+                  onClick={handleCopyJson}
+                  disabled={!profileData}
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copied ? 'Copied to Clipboard!' : 'Copy JSON'}</span>
+                </button>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+                  onClick={handleDownloadJson}
+                  disabled={!profileData}
+                >
+                  <Download size={14} />
+                  <span>Download .json</span>
+                </button>
+              </div>
+            </div>
+
+            {profileData ? (
+              <pre className="code-pre-box">
+                {JSON.stringify(profileData, null, 2)}
+              </pre>
+            ) : (
+              <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                <Code2 size={36} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
+                <p>No JSON data loaded yet. Search for a profile above to generate JSON.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: Visual Resume */}
       {activeTab === 'visual' && (
         <div className="fade-in">
           {loading && (
@@ -262,7 +357,7 @@ export default function App() {
                         className="btn-secondary" 
                         onClick={() => handleFetchProfile(profileData.publicIdentifier, true)}
                       >
-                        <RefreshCw size={14} /> Refresh
+                        <RefreshCw size={14} /> Refresh Live
                       </button>
                       <a 
                         href={`https://www.linkedin.com/in/${profileData.publicIdentifier}`} 
@@ -421,61 +516,6 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB 2: Clean Structured JSON with 1-Click Clipboard */}
-      {activeTab === 'json' && (
-        <div className="fade-in">
-          <div className="code-viewer-shell">
-            <div className="code-header-bar">
-              <div className="code-mac-dots">
-                <span className="mac-dot" style={{ background: '#ff5f56' }} />
-                <span className="mac-dot" style={{ background: '#ffbd2e' }} />
-                <span className="mac-dot" style={{ background: '#27c93f' }} />
-              </div>
-              <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <FileJson size={14} /> response.json
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button 
-                  className="btn-secondary" 
-                  style={{ 
-                    padding: '0.4rem 0.85rem', 
-                    fontSize: '0.82rem',
-                    background: copied ? 'rgba(16, 185, 129, 0.15)' : undefined,
-                    borderColor: copied ? '#10b981' : undefined,
-                    color: copied ? '#10b981' : undefined
-                  }}
-                  onClick={handleCopyJson}
-                  disabled={!profileData}
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copied ? 'Copied to Clipboard!' : 'Copy JSON'}</span>
-                </button>
-                <button 
-                  className="btn-secondary" 
-                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
-                  onClick={handleDownloadJson}
-                  disabled={!profileData}
-                >
-                  <Download size={14} />
-                  <span>Download .json</span>
-                </button>
-              </div>
-            </div>
-
-            {profileData ? (
-              <pre className="code-pre-box">
-                {JSON.stringify(profileData, null, 2)}
-              </pre>
-            ) : (
-              <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <Code2 size={36} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
-                <p>No JSON data loaded yet. Search for a profile above to generate JSON.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* TAB 3: API Integration Docs */}
       {activeTab === 'docs' && (
         <div className="panel fade-in" style={{ padding: '2.25rem' }}>
@@ -494,6 +534,9 @@ export default function App() {
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
               Pass a LinkedIn profile URL or vanity username as query parameter. Returns structured JSON.
             </p>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+              Add <code>&refresh=true</code> to always bypass cache and trigger a live fetch.
+            </div>
           </div>
 
           <div className="api-doc-block">
@@ -506,7 +549,8 @@ export default function App() {
             </p>
             <pre style={{ background: 'var(--bg-code)', padding: '0.75rem 1rem', borderRadius: 8, fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#93c5fd' }}>
 {`{
-  "url": "https://www.linkedin.com/in/williamhgates"
+  "url": "https://www.linkedin.com/in/satyanadella",
+  "refresh": true
 }`}
             </pre>
           </div>
