@@ -1,6 +1,9 @@
+/**
+ * Pure HTTP LinkedIn Voyager & Public Profile Client
+ * Clean standard Node.js implementation without heavy external wrappers.
+ */
+
 const axios = require('axios');
-const { wrapper } = require('axios-cookiejar-support');
-const { CookieJar } = require('tough-cookie');
 const { normalizeLinkedInProfile } = require('./normalizer');
 const { parseHtmlProfile } = require('./htmlParser');
 
@@ -20,37 +23,32 @@ class LinkedInClient {
     return this.jsessionid.replace(/^"|"$/g, '').trim();
   }
 
-  async createSessionClient() {
-    const jar = new CookieJar();
+  getCookieHeader() {
+    const rawLiAt = this.liAt;
     const csrf = this.getCsrfToken();
+    const parts = [];
+    if (rawLiAt) parts.push(`li_at=${rawLiAt}`);
+    if (csrf) parts.push(`JSESSIONID="${csrf}"`);
+    return parts.join('; ');
+  }
 
-    if (this.liAt) {
-      await jar.setCookie(`li_at=${this.liAt}; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
-    }
-    if (csrf) {
-      await jar.setCookie(`JSESSIONID="${csrf}"; Domain=.linkedin.com; Path=/`, 'https://www.linkedin.com');
-    }
-
-    return wrapper(axios.create({
-      jar,
-      withCredentials: true,
-      headers: {
-        'User-Agent': this.userAgent,
-        'Accept': 'application/json',
-        'csrf-token': csrf,
-        'x-restli-protocol-version': '2.0.0',
-        'Referer': 'https://www.linkedin.com/feed/'
-      }
-    }));
+  getVoyagerHeaders() {
+    const csrf = this.getCsrfToken();
+    return {
+      'User-Agent': this.userAgent,
+      'Accept': 'application/vnd.linkedin.normalized+json+2.1, application/json, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'csrf-token': csrf,
+      'x-restli-protocol-version': '2.0.0',
+      'Cookie': this.getCookieHeader(),
+      'Referer': 'https://www.linkedin.com/feed/'
+    };
   }
 
   isConfigured() {
     return Boolean((this.liAt && this.jsessionid) || (this.linkedApiToken && this.linkedApiIdent));
   }
 
-  /**
-   * Fetch person using connected LinkedApi gateway if tokens are provided
-   */
   async fetchViaLinkedApi(targetUrl) {
     if (!this.linkedApiToken || !this.linkedApiIdent) return null;
     try {
@@ -67,7 +65,7 @@ class LinkedInClient {
           'X-Identification-Token': this.linkedApiIdent,
           'Content-Type': 'application/json'
         },
-        timeout: 15000
+        timeout: 12000
       });
 
       if (executeRes.data && executeRes.data.data) {
@@ -86,7 +84,7 @@ class LinkedInClient {
 
     const targetUsername = identifier.trim();
 
-    // 1. LinkedApi Connected Workflow if configured
+    // 1. LinkedApi Connected Workflow
     const linkedApiResult = await this.fetchViaLinkedApi(targetUsername);
     if (linkedApiResult) {
       return {
@@ -96,7 +94,6 @@ class LinkedInClient {
     }
 
     // 2. Direct Reverse-Engineered Voyager Endpoints
-    const sessionClient = await this.createSessionClient();
     const voyagerUrls = [
       `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
       `https://www.linkedin.com/voyager/api/entities/people/${encodeURIComponent(targetUsername)}`,
@@ -107,12 +104,13 @@ class LinkedInClient {
     for (const url of voyagerUrls) {
       try {
         console.log(`[Voyager API] Requesting: ${url}`);
-        const res = await sessionClient.get(url, {
-          timeout: 10000,
+        const res = await axios.get(url, {
+          headers: this.getVoyagerHeaders(),
+          timeout: 8000,
           validateStatus: (status) => status < 500
         });
 
-        console.log(`[Voyager API] Response Status: ${res.status}`);
+        console.log(`[Voyager API] Status: ${res.status}`);
         if (res.status === 200 && res.data && (res.data.data || res.data.included || res.data.elements || res.data.entityUrn)) {
           console.log(`[LinkedInClient] ✅ Successfully resolved full profile via Voyager API!`);
           return {
@@ -135,7 +133,7 @@ class LinkedInClient {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9'
         },
-        timeout: 9000,
+        timeout: 8000,
         validateStatus: (status) => status < 500
       });
 
@@ -153,7 +151,7 @@ class LinkedInClient {
       console.warn(`[LinkedInClient] Public page note:`, e.message);
     }
 
-    throw new Error(`Could not fetch data for '${targetUsername}'.`);
+    throw new Error(`Could not fetch profile data for '${targetUsername}'.`);
   }
 }
 

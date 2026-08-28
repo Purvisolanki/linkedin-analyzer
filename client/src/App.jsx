@@ -34,7 +34,7 @@ export default function App() {
   const [profileData, setProfileData] = useState(null);
   const [rawPayload, setRawPayload] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('json'); // 'json' | 'raw' | 'visual' | 'docs'
+  const [activeTab, setActiveTab] = useState('json');
   const [copied, setCopied] = useState(false);
   const [rawCopied, setRawCopied] = useState(false);
   
@@ -78,6 +78,13 @@ export default function App() {
     try {
       const endpoint = `${API_BASE}/profile?url=${encodeURIComponent(targetUrl.trim())}${shouldRefresh ? '&refresh=true' : ''}`;
       const res = await fetch(endpoint);
+      
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        throw new Error(`Server returned HTML error (${res.status}): ${text.slice(0, 100)}`);
+      }
+
       const data = await res.json();
 
       if (!res.ok || !data.success) {
