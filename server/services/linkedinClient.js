@@ -18,12 +18,10 @@ class LinkedInClient {
 
   getCookieHeader() {
     const rawLiAt = (this.liAt || '').trim();
-    const rawJsession = (this.jsessionid || '').trim().replace(/^"|"$/g, '');
+    const rawJsession = this.getCsrfToken();
     const parts = [];
     if (rawLiAt) parts.push(`li_at=${rawLiAt}`);
     if (rawJsession) parts.push(`JSESSIONID="${rawJsession}"`);
-    parts.push('bcookie="v=2&"');
-    parts.push('lang=v=2&lang=en-us');
     return parts.join('; ');
   }
 
@@ -31,17 +29,18 @@ class LinkedInClient {
     const csrf = this.getCsrfToken();
     return {
       'User-Agent': this.userAgent,
-      'Accept': 'application/vnd.linkedin.normalized+json+2.1, application/json, text/plain, */*',
+      'Accept': 'application/vnd.linkedin.normalized+json+2.1, application/json, */*',
       'Accept-Language': 'en-US,en;q=0.9',
       'csrf-token': csrf,
       'x-restli-protocol-version': '2.0.0',
       'x-li-lang': 'en_US',
+      'x-li-page-instance': 'urn:li:page:d_flagship3_profile_view_base;12345',
       'x-li-track': JSON.stringify({ clientVersion: '1.13.8821' }),
       'Cookie': this.getCookieHeader(),
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin',
-      'Referer': 'https://www.linkedin.com/feed/'
+      'Referer': 'https://www.linkedin.com/'
     };
   }
 
@@ -56,7 +55,7 @@ class LinkedInClient {
 
     const targetUsername = identifier.trim();
 
-    // 1. Direct REST & Voyager API Calls with maxRedirects: 0 (No redirect loops)
+    // 1. Direct REST & Voyager API Calls
     const voyagerUrls = [
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}`,
       `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`,
@@ -70,7 +69,7 @@ class LinkedInClient {
         const res = await axios.get(url, {
           headers: this.getHeaders(),
           timeout: 8000,
-          maxRedirects: 0, // Prevents redirect loops completely
+          maxRedirects: 0,
           validateStatus: (status) => status < 400
         });
 
@@ -83,34 +82,30 @@ class LinkedInClient {
           };
         }
       } catch (err) {
-        console.warn(`[Voyager API] Note on ${url}:`, err.response?.status || err.message);
+        console.warn(`[Voyager API] Status ${err.response?.status || err.message}`);
       }
     }
 
-    // 2. Fetch Public Profile HTML fallback with maxRedirects: 0
+    // 2. Fetch Public Profile HTML WITHOUT cookies (Public View has no 302 auth challenge)
     try {
       const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
-      console.log(`[LinkedInClient] Fetching public web page: ${pageUrl}`);
+      console.log(`[LinkedInClient] Fetching public web page without auth-wall redirect: ${pageUrl}`);
       const res = await axios.get(pageUrl, {
         headers: {
-          'User-Agent': this.userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Cookie': this.getCookieHeader(),
-          'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
-          'Sec-Ch-Ua-Mobile': '?0',
-          'Sec-Ch-Ua-Platform': '"Windows"'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9'
         },
         timeout: 9000,
-        maxRedirects: 0,
+        maxRedirects: 5,
         validateStatus: (status) => status < 400
       });
 
-      console.log(`[LinkedInClient] Public Page Status: ${res.status}`);
+      console.log(`[LinkedInClient] Public Page Status: ${res.status}, Length: ${res.data?.length || 0}`);
       if (res.status === 200 && typeof res.data === 'string') {
         const parsedProfile = parseHtmlProfile(res.data, targetUsername);
         if (parsedProfile) {
-          console.log(`[LinkedInClient] ✅ Successfully resolved via HTML DOM Parser!`);
+          console.log(`[LinkedInClient] ✅ Successfully resolved via Public Web HTML Parser!`);
           return {
             profile: parsedProfile,
             raw: { source: 'html_dom_parser' }
@@ -121,7 +116,7 @@ class LinkedInClient {
       console.warn(`[LinkedInClient] Public page note:`, e.response?.status || e.message);
     }
 
-    throw new Error(`Could not retrieve full profile data for '${targetUsername}'.`);
+    throw new Error(`LinkedIn returned a 302 authentication checkpoint for '${targetUsername}'. Please ensure your LINKEDIN_LI_AT cookie is fresh.`);
   }
 }
 
