@@ -22,10 +22,12 @@ class LinkedInClient {
     const parts = [];
     if (rawLiAt) parts.push(`li_at=${rawLiAt}`);
     if (rawJsession) parts.push(`JSESSIONID="${rawJsession}"`);
+    parts.push('bcookie="v=2&"');
+    parts.push('lang=v=2&lang=en-us');
     return parts.join('; ');
   }
 
-  getHeaders() {
+  getVoyagerHeaders() {
     const csrf = this.getCsrfToken();
     return {
       'User-Agent': this.userAgent,
@@ -34,13 +36,12 @@ class LinkedInClient {
       'csrf-token': csrf,
       'x-restli-protocol-version': '2.0.0',
       'x-li-lang': 'en_US',
-      'x-li-page-instance': 'urn:li:page:d_flagship3_profile_view_base;12345',
       'x-li-track': JSON.stringify({ clientVersion: '1.13.8821' }),
       'Cookie': this.getCookieHeader(),
       'Sec-Fetch-Dest': 'empty',
       'Sec-Fetch-Mode': 'cors',
       'Sec-Fetch-Site': 'same-origin',
-      'Referer': 'https://www.linkedin.com/'
+      'Referer': 'https://www.linkedin.com/feed/'
     };
   }
 
@@ -67,10 +68,9 @@ class LinkedInClient {
       try {
         console.log(`[Voyager API] Calling: ${url}`);
         const res = await axios.get(url, {
-          headers: this.getHeaders(),
+          headers: this.getVoyagerHeaders(),
           timeout: 8000,
-          maxRedirects: 0,
-          validateStatus: (status) => status < 400
+          validateStatus: (status) => status < 500
         });
 
         console.log(`[Voyager API] Status: ${res.status}`);
@@ -86,22 +86,21 @@ class LinkedInClient {
       }
     }
 
-    // 2. Fetch Public Profile HTML WITHOUT cookies (Public View has no 302 auth challenge)
+    // 2. Fetch Public Profile HTML fallback
     try {
       const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
-      console.log(`[LinkedInClient] Fetching public web page without auth-wall redirect: ${pageUrl}`);
+      console.log(`[LinkedInClient] Fetching public web page: ${pageUrl}`);
       const res = await axios.get(pageUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'User-Agent': this.userAgent,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9'
         },
         timeout: 9000,
-        maxRedirects: 5,
-        validateStatus: (status) => status < 400
+        validateStatus: (status) => status < 500
       });
 
-      console.log(`[LinkedInClient] Public Page Status: ${res.status}, Length: ${res.data?.length || 0}`);
+      console.log(`[LinkedInClient] Public Page Status: ${res.status}`);
       if (res.status === 200 && typeof res.data === 'string') {
         const parsedProfile = parseHtmlProfile(res.data, targetUsername);
         if (parsedProfile) {
