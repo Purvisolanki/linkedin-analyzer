@@ -1,0 +1,27 @@
+{
+  "name": "ontross-linkedin-api",
+  "version": "1.0.0",
+  "description": "Reverse engineered LinkedIn Profile API (Voyage Dash GraphQL/REST)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "client": "npm --prefix client run dev",
+    "dev": "node server/index.js",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "postinstall": "npm --prefix client install && npm --prefix client run build"
+  },
+  "keywords": ["linkedin", "api", "reverse-engineering", "scraper", "voyage", "mern"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "mongoose": "^8.9.5",
+    "morgan": "^1.10.0"
+  }
+}

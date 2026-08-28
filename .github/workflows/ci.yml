@@ -1,0 +1,36 @@
+name: Test and Deploy to Vercel
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  test:
+    name: Run Unit Tests & Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Root Dependencies
+        run: npm ci || npm install
+
+      - name: Run Test Suite (Validator & Normalizer)
+        run: node test_suite.js
+
+      - name: Install Client Dependencies & Test Frontend Build
+        run: |
+          npm --prefix client install
+          npm --prefix client run build
