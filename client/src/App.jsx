@@ -7,37 +7,28 @@ import {
   GraduationCap, 
   Award, 
   Globe, 
-  CheckCircle2, 
-  AlertCircle, 
   Copy, 
   Check,
   Download, 
   ExternalLink,
-  Layers,
-  Sparkles,
-  RefreshCw,
   Sun,
   Moon,
-  Zap,
   ArrowRight,
-  Database
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 
 const API_BASE = '/api';
 
 export default function App() {
-  const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('theme') || 'dark';
-  });
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [urlInput, setUrlInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('visual'); // 'visual' | 'json' | 'docs'
+  const [activeTab, setActiveTab] = useState('visual');
   const [copied, setCopied] = useState(false);
-  const [healthStatus, setHealthStatus] = useState({ checked: false, configured: false });
 
-  // Sync theme attribute to <html>
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
@@ -47,25 +38,11 @@ export default function App() {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Curated prominent demo profiles
-  const examples = [
+  const sampleProfiles = [
     { label: 'Bill Gates', url: 'https://www.linkedin.com/in/williamhgates' },
     { label: 'Satya Nadella', url: 'https://www.linkedin.com/in/satyanadella' },
-    { label: 'Sundar Pichai', url: 'https://www.linkedin.com/in/sundarpichai' },
-    { label: 'Reid Hoffman', url: 'https://www.linkedin.com/in/reidhoffman' }
+    { label: 'Sundar Pichai', url: 'https://www.linkedin.com/in/sundarpichai' }
   ];
-
-  // Check health and authentication status on load
-  useEffect(() => {
-    fetch(`${API_BASE}/health`)
-      .then(res => res.json())
-      .then(data => {
-        setHealthStatus({ checked: true, configured: data.authConfigured, message: data.message });
-      })
-      .catch(() => {
-        setHealthStatus({ checked: true, configured: false, message: 'Backend unreachable.' });
-      });
-  }, []);
 
   const handleFetchProfile = async (targetUrl = urlInput, forceRefresh = false) => {
     if (!targetUrl.trim()) return;
@@ -79,7 +56,7 @@ export default function App() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to fetch LinkedIn profile.');
+        throw new Error(data.error || 'Could not fetch profile.');
       }
 
       setProfileData(data.data);
@@ -104,69 +81,45 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${profileData.publicIdentifier || 'linkedin_profile'}.json`;
+    a.download = `${profileData.publicIdentifier || 'profile'}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="app-container">
-      {/* Stripe / Google Styled Navbar */}
+      {/* Clean Navbar */}
       <header className="navbar">
         <div className="brand">
-          <div className="brand-icon">
-            <Layers size={22} />
-          </div>
+          <div className="brand-logo">in</div>
           <div>
-            <div className="brand-title">Voyage API Engine</div>
-            <div className="brand-tag">LinkedIn Profile Reverse Engineering</div>
+            <div className="brand-title">Profile API</div>
+            <div className="brand-tag">LinkedIn Data Extractor</div>
           </div>
         </div>
 
         <div className="nav-actions">
-          {healthStatus.checked && (
-            <div className={`pill-badge ${healthStatus.configured ? 'pill-success' : 'pill-warning'}`}>
-              {healthStatus.configured ? (
-                <>
-                  <CheckCircle2 size={13} />
-                  <span>Session Active</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle size={13} />
-                  <span>Missing Credentials</span>
-                </>
-              )}
-            </div>
-          )}
-
           <button 
             className="theme-toggle-btn" 
             onClick={toggleTheme} 
             title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-            aria-label="Toggle Theme"
           >
-            {theme === 'dark' ? <Sun size={19} color="#f59e0b" /> : <Moon size={19} color="#6366f1" />}
+            {theme === 'dark' ? <Sun size={18} color="#f59e0b" /> : <Moon size={18} color="#6366f1" />}
           </button>
         </div>
       </header>
 
-      {/* Hero Section */}
+      {/* Hero & Search */}
       <section className="panel hero-section">
-        <div className="hero-chip">
-          <Zap size={14} />
-          <span>Zero Browser Automation • Sub-Second Latency</span>
-        </div>
-
         <h1 className="hero-headline">
-          Reverse-Engineered <span className="gradient-text">LinkedIn Profile</span> API
+          Get <span className="gradient-text">LinkedIn Profile Data</span> as JSON
         </h1>
         
         <p className="hero-description">
-          Query internal LinkedIn Voyage GraphQL & REST services directly. Extract structured data including resumes, experiences, skills, and high-res vector imagery.
+          Enter any public LinkedIn profile URL to extract structured profile information, work history, education, and skills.
         </p>
 
-        {/* Search Box Form */}
+        {/* Search Bar */}
         <form 
           className="search-box-form"
           onSubmit={(e) => {
@@ -174,11 +127,11 @@ export default function App() {
             handleFetchProfile();
           }}
         >
-          <Search className="search-icon-inside" size={20} />
+          <Search className="search-icon-inside" size={19} />
           <input 
             type="text"
             className="search-input-field"
-            placeholder="Paste LinkedIn URL (e.g. https://www.linkedin.com/in/williamhgates) or vanity username"
+            placeholder="Paste LinkedIn URL (e.g. https://www.linkedin.com/in/williamhgates)"
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
           />
@@ -190,21 +143,21 @@ export default function App() {
             {loading ? (
               <>
                 <div className="spinner-ring" />
-                <span>Extracting</span>
+                <span>Fetching...</span>
               </>
             ) : (
               <>
-                <span>Extract Profile</span>
-                <ArrowRight size={16} />
+                <span>Search</span>
+                <ArrowRight size={15} />
               </>
             )}
           </button>
         </form>
 
-        {/* Quick Demo Selector */}
+        {/* Sample Pills */}
         <div className="quick-pills">
-          <span className="quick-pill-label">Try instant samples:</span>
-          {examples.map((item, idx) => (
+          <span className="quick-pill-label">Examples:</span>
+          {sampleProfiles.map((item, idx) => (
             <button 
               key={idx} 
               type="button"
@@ -220,17 +173,16 @@ export default function App() {
         </div>
       </section>
 
-      {/* Error Alert Display */}
+      {/* Error Alert */}
       {error && (
         <div className="panel fade-in" style={{ padding: '1.25rem 1.5rem', marginBottom: '2rem', borderColor: '#ef4444', background: 'rgba(239, 68, 68, 0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#ef4444', fontWeight: 600 }}>
-            <AlertCircle size={20} />
-            <span>{error}</span>
+          <div style={{ color: '#ef4444', fontWeight: 600, fontSize: '0.95rem' }}>
+            {error}
           </div>
-          {!healthStatus.configured && (
-            <p style={{ marginTop: '0.5rem', fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-              Please configure your <code>LINKEDIN_LI_AT</code> and <code>LINKEDIN_JSESSIONID</code> cookies in your environment variables.
-            </p>
+          {error.includes('credentials') && (
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
+              Add <code>LINKEDIN_LI_AT</code> and <code>LINKEDIN_JSESSIONID</code> in your Vercel Environment Variables.
+            </div>
           )}
         </div>
       )}
@@ -241,41 +193,41 @@ export default function App() {
           className={`tab-nav-btn ${activeTab === 'visual' ? 'active' : ''}`}
           onClick={() => setActiveTab('visual')}
         >
-          <User size={16} /> Visual Profile
+          <User size={16} /> Profile View
         </button>
         <button 
           className={`tab-nav-btn ${activeTab === 'json' ? 'active' : ''}`}
           onClick={() => setActiveTab('json')}
         >
-          <Code2 size={16} /> Structured JSON
+          <Code2 size={16} /> JSON Response
         </button>
         <button 
           className={`tab-nav-btn ${activeTab === 'docs' ? 'active' : ''}`}
           onClick={() => setActiveTab('docs')}
         >
-          <Globe size={16} /> API Integration
+          <Globe size={16} /> API Docs
         </button>
       </div>
 
-      {/* TAB 1: Visual Resume & Profile */}
+      {/* TAB 1: Visual Resume */}
       {activeTab === 'visual' && (
         <div className="fade-in">
           {loading && (
             <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-              <div className="spinner-ring" style={{ width: 36, height: 36, borderWidth: 3, margin: '0 auto 1.5rem', borderColor: 'rgba(99, 102, 241, 0.2)', borderTopColor: 'var(--accent-primary)' }} />
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem' }}>Calling LinkedIn Voyage API</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Extracting normalized graph entities, positions, and high-res vector pictures...</p>
+              <div className="spinner-ring" style={{ width: 32, height: 32, borderWidth: 3, margin: '0 auto 1.25rem', borderColor: 'rgba(99, 102, 241, 0.2)', borderTopColor: 'var(--accent-primary)' }} />
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 600, marginBottom: '0.3rem' }}>Fetching Profile...</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Reading profile details and formatting response</p>
             </div>
           )}
 
           {!loading && !profileData && !error && (
-            <div className="panel" style={{ textAlign: 'center', padding: '4.5rem 2rem' }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem', color: 'var(--text-muted)' }}>
-                <User size={30} />
+            <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--bg-pill)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem', color: 'var(--text-muted)' }}>
+                <User size={26} />
               </div>
-              <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.5rem' }}>No Profile Loaded</h3>
-              <p style={{ color: 'var(--text-secondary)', maxWidth: 450, margin: '0 auto' }}>
-                Paste any LinkedIn profile link above or click one of the quick samples to inspect complete profile data.
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '0.4rem' }}>No Profile Loaded</h3>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', fontSize: '0.92rem' }}>
+                Enter a profile URL above or pick an example to view details.
               </p>
             </div>
           )}
@@ -302,9 +254,8 @@ export default function App() {
                       <button 
                         className="btn-secondary" 
                         onClick={() => handleFetchProfile(profileData.publicIdentifier, true)}
-                        title="Force live scrape bypass cache"
                       >
-                        <RefreshCw size={14} /> Refresh Live
+                        <RefreshCw size={14} /> Refresh
                       </button>
                       <a 
                         href={`https://www.linkedin.com/in/${profileData.publicIdentifier}`} 
@@ -312,7 +263,7 @@ export default function App() {
                         rel="noreferrer"
                         className="btn-secondary"
                       >
-                        <ExternalLink size={14} /> View on LinkedIn
+                        <ExternalLink size={14} /> Open in LinkedIn
                       </a>
                     </div>
                   </div>
@@ -323,22 +274,21 @@ export default function App() {
                   <div className="profile-chips-bar">
                     {profileData.location && (
                       <span className="profile-chip-item">
-                        <Globe size={15} color="var(--accent-primary)" /> {profileData.location}
+                        <Globe size={14} color="var(--accent-primary)" /> {profileData.location}
                       </span>
                     )}
                     <span className="profile-chip-item">
-                      <Briefcase size={15} color="var(--accent-cyan)" /> {profileData.experience?.length || 0} Experience items
+                      <Briefcase size={14} color="var(--accent-cyan)" /> {profileData.experience?.length || 0} Experience items
                     </span>
                     <span className="profile-chip-item">
-                      <GraduationCap size={15} color="var(--accent-emerald)" /> {profileData.education?.length || 0} Education items
+                      <GraduationCap size={14} color="var(--accent-emerald)" /> {profileData.education?.length || 0} Education items
                     </span>
                   </div>
 
-                  {/* Summary / About */}
                   {profileData.about && (
-                    <div style={{ marginTop: '1.75rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '1.5rem' }}>
-                      <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>About</h4>
-                      <p style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '0.96rem', whiteSpace: 'pre-line' }}>
+                    <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '1.25rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-primary)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>About</h4>
+                      <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.94rem', whiteSpace: 'pre-line' }}>
                         {profileData.about}
                       </p>
                     </div>
@@ -346,19 +296,18 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Grid Content: Experience, Education, Skills, Certifications */}
+              {/* Profile Details Grid */}
               <div className="profile-content-grid">
-                {/* Left: Experience & Education */}
                 <div>
-                  {/* Experience Card */}
-                  <div className="panel" style={{ padding: '2rem', marginBottom: '1.75rem' }}>
+                  {/* Experience */}
+                  <div className="panel" style={{ padding: '1.75rem', marginBottom: '1.5rem' }}>
                     <h3 className="section-heading">
-                      <Briefcase className="section-heading-icon" size={22} />
+                      <Briefcase className="section-heading-icon" size={20} />
                       <span>Experience</span>
                     </h3>
                     
                     {(!profileData.experience || profileData.experience.length === 0) ? (
-                      <p style={{ color: 'var(--text-muted)' }}>No experience details available.</p>
+                      <p style={{ color: 'var(--text-muted)' }}>No experience details listed.</p>
                     ) : (
                       profileData.experience.map((exp, i) => (
                         <div key={i} className="experience-card">
@@ -369,22 +318,22 @@ export default function App() {
                             </div>
                             {exp.dateRange && <div className="exp-date">{exp.dateRange}</div>}
                           </div>
-                          {exp.location && <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{exp.location}</div>}
+                          {exp.location && <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{exp.location}</div>}
                           {exp.description && <div className="exp-desc">{exp.description}</div>}
                         </div>
                       ))
                     )}
                   </div>
 
-                  {/* Education Card */}
-                  <div className="panel" style={{ padding: '2rem' }}>
+                  {/* Education */}
+                  <div className="panel" style={{ padding: '1.75rem' }}>
                     <h3 className="section-heading">
-                      <GraduationCap className="section-heading-icon" size={22} />
+                      <GraduationCap className="section-heading-icon" size={20} />
                       <span>Education</span>
                     </h3>
 
                     {(!profileData.education || profileData.education.length === 0) ? (
-                      <p style={{ color: 'var(--text-muted)' }}>No education records found.</p>
+                      <p style={{ color: 'var(--text-muted)' }}>No education records listed.</p>
                     ) : (
                       profileData.education.map((edu, i) => (
                         <div key={i} className="experience-card">
@@ -404,12 +353,12 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Right: Skills, Certifications, Languages */}
+                {/* Right Column: Skills, Certifications, Languages */}
                 <div>
-                  {/* Skills Card */}
-                  <div className="panel" style={{ padding: '1.75rem', marginBottom: '1.75rem' }}>
+                  {/* Skills */}
+                  <div className="panel" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
                     <h3 className="section-heading">
-                      <Sparkles className="section-heading-icon" size={20} />
+                      <Sparkles className="section-heading-icon" size={18} />
                       <span>Skills</span>
                     </h3>
 
@@ -426,32 +375,32 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Certifications Card */}
+                  {/* Certifications */}
                   {profileData.certifications && profileData.certifications.length > 0 && (
-                    <div className="panel" style={{ padding: '1.75rem', marginBottom: '1.75rem' }}>
+                    <div className="panel" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
                       <h3 className="section-heading">
-                        <Award className="section-heading-icon" size={20} />
+                        <Award className="section-heading-icon" size={18} />
                         <span>Certifications</span>
                       </h3>
                       {profileData.certifications.map((c, i) => (
-                        <div key={i} style={{ marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--border-subtle)' }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>{c.name}</div>
-                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{c.authority}</div>
-                          {c.dateRange && <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.2rem' }}>{c.dateRange}</div>}
+                        <div key={i} style={{ marginBottom: '0.85rem', paddingBottom: '0.85rem', borderBottom: '1px solid var(--border-subtle)' }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{c.name}</div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{c.authority}</div>
+                          {c.dateRange && <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.15rem' }}>{c.dateRange}</div>}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* Languages Card */}
+                  {/* Languages */}
                   {profileData.languages && profileData.languages.length > 0 && (
-                    <div className="panel" style={{ padding: '1.75rem' }}>
+                    <div className="panel" style={{ padding: '1.5rem' }}>
                       <h3 className="section-heading">
-                        <Globe className="section-heading-icon" size={20} />
+                        <Globe className="section-heading-icon" size={18} />
                         <span>Languages</span>
                       </h3>
                       {profileData.languages.map((l, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.65rem', fontSize: '0.9rem' }}>
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.88rem' }}>
                           <span style={{ fontWeight: 600 }}>{l.name}</span>
                           <span style={{ color: 'var(--text-muted)' }}>{l.proficiency || 'Proficient'}</span>
                         </div>
@@ -465,7 +414,7 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB 2: Structured JSON Code Viewer (Stripe/JetBrains style) */}
+      {/* TAB 2: Clean JSON Viewer */}
       {activeTab === 'json' && (
         <div className="fade-in">
           <div className="code-viewer-shell">
@@ -476,7 +425,7 @@ export default function App() {
                 <span className="mac-dot" style={{ background: '#27c93f' }} />
               </div>
               <div style={{ fontSize: '0.82rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                response.json
+                output.json
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
@@ -506,7 +455,7 @@ export default function App() {
               </pre>
             ) : (
               <div style={{ padding: '3.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No JSON available. Search a profile first.
+                No data loaded yet. Search for a profile first.
               </div>
             )}
           </div>
@@ -515,63 +464,44 @@ export default function App() {
 
       {/* TAB 3: API Integration Docs */}
       {activeTab === 'docs' && (
-        <div className="panel fade-in" style={{ padding: '2.5rem' }}>
-          <h2 style={{ fontSize: '1.6rem', fontWeight: 800, marginBottom: '0.75rem' }}>
-            API Integration Reference
+        <div className="panel fade-in" style={{ padding: '2rem' }}>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+            API Usage
           </h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
-            Connect to this hosted API from any client, backend service, or automation tool over standard HTTPS.
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.75rem', fontSize: '0.95rem' }}>
+            Call the API from your code or automation tool:
           </p>
 
-          {/* Endpoint 1 */}
           <div className="api-doc-block">
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.6rem' }}>
               <span className="http-badge http-get">GET</span>
               <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>/api/profile?url=&#123;LINKEDIN_URL&#125;</code>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-              Accepts a LinkedIn profile URL or raw username. Returns structured JSON.
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+              Returns clean JSON with name, headline, experience, education, skills, and image URLs.
             </p>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Optional: <code>&refresh=true</code> forces a fresh live Voyage fetch (bypassing MongoDB cache).
-            </div>
           </div>
 
-          {/* Endpoint 2 */}
           <div className="api-doc-block">
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.6rem' }}>
               <span className="http-badge http-post">POST</span>
               <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>/api/profile</code>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              Accepts JSON payload in the request body:
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: '0.5rem' }}>
+              Send JSON body:
             </p>
             <pre style={{ background: 'var(--bg-code)', padding: '0.75rem 1rem', borderRadius: 8, fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: '#93c5fd' }}>
 {`{
-  "url": "https://www.linkedin.com/in/williamhgates",
-  "refresh": false
+  "url": "https://www.linkedin.com/in/williamhgates"
 }`}
             </pre>
-          </div>
-
-          {/* Endpoint 3 */}
-          <div className="api-doc-block">
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <span className="http-badge http-get">GET</span>
-              <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>/api/health</code>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              Healthcheck endpoint returning session authentication state.
-            </p>
           </div>
         </div>
       )}
 
-      {/* Footer */}
-      <footer style={{ textAlign: 'center', marginTop: '3.5rem', color: 'var(--text-muted)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-        <span>LinkedIn Voyage Reverse-Engineered Engine</span>
-        <span>•</span>
-        <span>MERN Stack</span>
+      {/* Clean Footer */}
+      <footer style={{ textAlign: 'center', marginTop: '3.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+        LinkedIn Profile API
       </footer>
     </div>
   );
