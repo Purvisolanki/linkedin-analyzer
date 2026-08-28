@@ -49,35 +49,6 @@ class LinkedInClient {
     return Boolean(this.liAt && this.jsessionid);
   }
 
-  async resolveMemberProfile(username) {
-    const endpoints = [
-      `${this.baseURL}/identity/profiles/${encodeURIComponent(username)}/profileView`,
-      `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(username)}`,
-      `${this.baseURL}/graphql?variables=(vanityName:${encodeURIComponent(username)})&queryId=voyageIdentityDashProfiles.622b7b5dc6439546b4ec2b55b9ebca72`
-    ];
-
-    for (const url of endpoints) {
-      try {
-        console.log(`[Voyager API] Calling: ${url}`);
-        const res = await axios.get(url, {
-          headers: this.getHeaders(),
-          timeout: 8000,
-          validateStatus: () => true
-        });
-
-        console.log(`[Voyager API] Response Status: ${res.status}`);
-        console.log(`[Voyager API Raw Response Dump]:`, JSON.stringify(res.data).slice(0, 800));
-
-        if (res.status === 200 && res.data) {
-          return res.data;
-        }
-      } catch (err) {
-        console.warn(`[Voyager API] Error on ${url}:`, err.message);
-      }
-    }
-    return null;
-  }
-
   async fetchProfile(identifier) {
     if (!this.isConfigured()) {
       throw new Error('LinkedIn credentials (LINKEDIN_LI_AT and LINKEDIN_JSESSIONID) are missing from environment variables.');
@@ -85,45 +56,52 @@ class LinkedInClient {
 
     const targetUsername = identifier.trim();
 
-    // 1. Try authenticated Voyager API
-    const rawVoyager = await this.resolveMemberProfile(targetUsername);
-    if (rawVoyager) {
-      console.log(`[LinkedInClient] ✅ Successfully resolved via Voyager REST API!`);
-      const normalized = normalizeLinkedInProfile(rawVoyager, targetUsername);
-      return {
-        profile: normalized,
-        raw: rawVoyager
-      };
+    // 1. Direct REST & Voyager API Calls
+    const voyagerUrls = [
+      `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`,
+      `https://www.linkedin.com/voyager/api/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`,
+      `https://www.linkedin.com/voyager/api/graphql?variables=(vanityName:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.622b7b5dc6439546b4ec2b55b9ebca72`
+    ];
+
+    for (const url of voyagerUrls) {
+      try {
+        const res = await axios.get(url, {
+          headers: this.getHeaders(),
+          timeout: 8000,
+          maxRedirects: 5,
+          validateStatus: () => true
+        });
+
+        if (res.status === 200 && res.data && (res.data.data || res.data.included)) {
+          return {
+            profile: normalizeLinkedInProfile(res.data, targetUsername),
+            raw: res.data
+          };
+        }
+      } catch (err) {}
     }
 
-    // 2. Fetch full public web page and log snippet
+    // 2. Fetch Public Profile HTML directly with browser headers
     try {
       const pageUrl = `https://www.linkedin.com/in/${encodeURIComponent(targetUsername)}/`;
-      console.log(`[LinkedInClient] Fetching public web page: ${pageUrl}`);
       const res = await axios.get(pageUrl, {
         headers: {
           'User-Agent': this.userAgent,
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
-          'Cookie': this.getCookieHeader()
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Cookie': this.getCookieHeader(),
+          'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Upgrade-Insecure-Requests': '1'
         },
         timeout: 9000,
+        maxRedirects: 5,
         validateStatus: () => true
       });
 
-      console.log(`[LinkedInClient] Public Page Status: ${res.status}, Length: ${res.data?.length || 0}`);
-      
-      if (typeof res.data === 'string') {
-        // Log the first 1500 characters of the HTML to see head/meta tags and scripts
-        console.log(`[RAW HTML HEAD SNIPPET]:\n`, res.data.slice(0, 1500));
-        
-        // Find any json/ld or state matches and log them
-        const scripts = res.data.match(/<script[^>]*>(.*?)<\/script>/gis) || [];
-        console.log(`[RAW HTML SCRIPT COUNT]: ${scripts.length}`);
-        scripts.slice(0, 5).forEach((sc, i) => {
-          console.log(`[RAW SCRIPT ${i} SNIPPET]:`, sc.slice(0, 300));
-        });
-
+      if (res.status === 200 && typeof res.data === 'string') {
         const parsedProfile = parseHtmlProfile(res.data, targetUsername);
         if (parsedProfile) {
           return {
@@ -132,11 +110,9 @@ class LinkedInClient {
           };
         }
       }
-    } catch (e) {
-      console.error(`[LinkedInClient] Error fetching public page:`, e.message);
-    }
+    } catch (e) {}
 
-    throw new Error(`Could not retrieve profile data for '${targetUsername}'.`);
+    throw new Error(`Could not retrieve full profile data for '${targetUsername}'.`);
   }
 }
 
