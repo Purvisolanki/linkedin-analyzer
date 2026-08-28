@@ -17,8 +17,11 @@ class LinkedInClient {
 
   getCookieHeader() {
     const cookies = [];
-    if (this.liAt) cookies.push(`li_at=${this.liAt}`);
-    if (this.jsessionid) cookies.push(`JSESSIONID=${this.jsessionid}`);
+    if (this.liAt) cookies.push(`li_at=${this.liAt.trim()}`);
+    if (this.jsessionid) {
+      const cleanJsession = this.jsessionid.trim().replace(/^"|"$/g, '');
+      cookies.push(`JSESSIONID="${cleanJsession}"`);
+    }
     return cookies.join('; ');
   }
 
@@ -44,91 +47,77 @@ class LinkedInClient {
   }
 
   /**
-   * Searches LinkedIn for a person by name if not given a direct vanity URL
-   * @param {string} query 
-   * @returns {Promise<string|null>} Resolved vanity identifier
-   */
-  async searchMember(query) {
-    const searchUrl = `${this.baseURL}/graphql?variables=(start:0,count:1,query:(keywords:${encodeURIComponent(query)},flagshipSearchIntent:SEARCH_SRP))&queryId=voyageSearchDashClusters.2b39f3796d11124e41416e9196feeb10`;
-
-    try {
-      const response = await axios.get(searchUrl, {
-        headers: this.getHeaders(),
-        timeout: 10000
-      });
-
-      const included = response.data?.included || [];
-      const profile = included.find(item => item.$type === 'com.linkedin.voyage.dash.identity.profile.Profile' || item.publicIdentifier);
-
-      return profile?.publicIdentifier || null;
-    } catch (err) {
-      return null;
-    }
-  }
-
-  /**
-   * Fetches full LinkedIn profile data
-   * @param {string} identifier 
+   * Primary profile fetcher with multi-endpoint fallback cascade
    */
   async fetchProfile(identifier) {
     if (!this.isConfigured()) {
       throw new Error('LinkedIn credentials (LINKEDIN_LI_AT and LINKEDIN_JSESSIONID) are missing or not configured in environment variables.');
     }
 
-    let targetUsername = identifier;
+    const targetUsername = identifier.trim();
+    const errors = [];
 
-    // Primary Voyage Dash Profiles API
-    const profileUrl = `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`;
-
+    // Strategy 1: GraphQL / Dash Member Profiles API
     try {
-      const response = await axios.get(profileUrl, {
+      const url1 = `${this.baseURL}/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(targetUsername)}&decorationId=com.linkedin.voyage.dash.deco.identity.profile.FullProfileWithEntities-93`;
+      const res = await axios.get(url1, {
         headers: this.getHeaders(),
-        timeout: 15000,
-        validateStatus: (status) => status < 500
+        timeout: 12000,
+        validateStatus: (s) => s < 500
       });
 
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(`LinkedIn authentication failed (${response.status}). Please check your LINKEDIN_LI_AT and LINKEDIN_JSESSIONID cookies.`);
+      if (res.status === 200 && res.data && (res.data.data || res.data.included)) {
+        return {
+          profile: normalizeLinkedInProfile(res.data, targetUsername),
+          raw: res.data
+        };
       }
-
-      if (response.status === 404) {
-        throw new Error(`LinkedIn profile '${targetUsername}' was not found. Please verify the URL.`);
-      }
-
-      if (response.status !== 200) {
-        throw new Error(`LinkedIn API returned status ${response.status}.`);
-      }
-
-      if (!response.data || (!response.data.data && !response.data.included)) {
-        throw new Error(`Empty response from LinkedIn for '${targetUsername}'.`);
-      }
-
-      const normalizedData = normalizeLinkedInProfile(response.data, targetUsername);
-      return {
-        profile: normalizedData,
-        raw: response.data
-      };
-
-    } catch (error) {
-      if (error.response?.status === 400 || error.message.includes('decoration')) {
-        return await this.fetchProfileFallback(targetUsername);
-      }
-      throw error;
+      errors.push(`Strategy 1 (Dash API) returned status ${res.status}`);
+    } catch (e) {
+      errors.push(`Strategy 1 error: ${e.message}`);
     }
-  }
 
-  async fetchProfileFallback(publicIdentifier) {
-    const fallbackUrl = `${this.baseURL}/identity/profiles/${encodeURIComponent(publicIdentifier)}/profileView`;
-    const response = await axios.get(fallbackUrl, {
-      headers: this.getHeaders(),
-      timeout: 15000
-    });
+    // Strategy 2: Identity Profile View API
+    try {
+      const url2 = `${this.baseURL}/identity/profiles/${encodeURIComponent(targetUsername)}/profileView`;
+      const res = await axios.get(url2, {
+        headers: this.getHeaders(),
+        timeout: 12000,
+        validateStatus: (s) => s < 500
+      });
 
-    const normalizedData = normalizeLinkedInProfile(response.data, publicIdentifier);
-    return {
-      profile: normalizedData,
-      raw: response.data
-    };
+      if (res.status === 200 && res.data) {
+        return {
+          profile: normalizeLinkedInProfile(res.data, targetUsername),
+          raw: res.data
+        };
+      }
+      errors.push(`Strategy 2 (ProfileView API) returned status ${res.status}`);
+    } catch (e) {
+      errors.push(`Strategy 2 error: ${e.message}`);
+    }
+
+    // Strategy 3: GraphQL Member Profile Query
+    try {
+      const url3 = `${this.baseURL}/graphql?variables=(vanityName:${encodeURIComponent(targetUsername)})&queryId=voyageIdentityDashProfiles.622b7b5dc6439546b4ec2b55b9ebca72`;
+      const res = await axios.get(url3, {
+        headers: this.getHeaders(),
+        timeout: 12000,
+        validateStatus: (s) => s < 500
+      });
+
+      if (res.status === 200 && res.data && (res.data.data || res.data.included)) {
+        return {
+          profile: normalizeLinkedInProfile(res.data, targetUsername),
+          raw: res.data
+        };
+      }
+      errors.push(`Strategy 3 (GraphQL query) returned status ${res.status}`);
+    } catch (e) {
+      errors.push(`Strategy 3 error: ${e.message}`);
+    }
+
+    throw new Error(`Could not locate LinkedIn profile '${targetUsername}'. (${errors[0] || 'Profile not found or restricted'})`);
   }
 }
 
